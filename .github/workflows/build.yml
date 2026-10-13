@@ -1,0 +1,56 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Testes
+        run: cargo test --release
+
+      - name: Compilar
+        run: cargo build --release
+
+      - name: Baixar FFmpeg (build essentials do gyan.dev)
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg-src
+          $bin = Get-ChildItem -Path ffmpeg-src -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          New-Item -ItemType Directory -Force -Path dist/ClipCraft | Out-Null
+          Copy-Item $bin.FullName dist/ClipCraft/
+          Copy-Item (Join-Path $bin.DirectoryName "ffprobe.exe") dist/ClipCraft/
+
+      - name: Montar pacote
+        shell: pwsh
+        run: |
+          Copy-Item target/release/ClipCraft.exe dist/ClipCraft/
+          Copy-Item dist-files/LEIA-ME.txt dist/ClipCraft/
+          Compress-Archive -Path dist/ClipCraft -DestinationPath ClipCraft-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ClipCraft-windows
+          path: ClipCraft-windows.zip
+
+      - name: Publicar release (só em tag v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ClipCraft-windows.zip
+          generate_release_notes: true

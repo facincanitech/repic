@@ -1,0 +1,20 @@
+CLIPCRAFT
+=========
+
+1. Deixe os 3 arquivos juntos na mesma pasta:
+   ClipCraft.exe, ffmpeg.exe e ffprobe.exe
+2. Abra o ClipCraft.exe
+3. Jogue normalmente. Apertou F8, os últimos 30 segundos viram um clipe.
+
+Os clipes vão para: Vídeos\ClipCraft
+Fechar a janela não para o programa: ele fica na bandeja, perto do relógio.
+Para sair de verdade: botão direito no ícone da bandeja -> Sair.
+
+Dica: jogos em tela cheia exclusiva podem sair com a tela preta.
+Use o modo "janela sem bordas" (borderless) no jogo.
+
+Sem login, sem conta, sem upload. Nada sai do seu PC.
+
+---
+Este pacote inclui o FFmpeg (https://ffmpeg.org), distribuído sob a
+licença GPL v3. Código-fonte e build: https://www.gyan.dev/ffmpeg/builds/
