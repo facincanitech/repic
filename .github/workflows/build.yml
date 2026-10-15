@@ -32,25 +32,25 @@ jobs:
           Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile ffmpeg.zip
           Expand-Archive ffmpeg.zip -DestinationPath ffmpeg-src
           $bin = Get-ChildItem -Path ffmpeg-src -Recurse -Filter ffmpeg.exe | Select-Object -First 1
-          New-Item -ItemType Directory -Force -Path dist/ClipCraft | Out-Null
-          Copy-Item $bin.FullName dist/ClipCraft/
-          Copy-Item (Join-Path $bin.DirectoryName "ffprobe.exe") dist/ClipCraft/
+          New-Item -ItemType Directory -Force -Path dist/RePic | Out-Null
+          Copy-Item $bin.FullName dist/RePic/
+          Copy-Item (Join-Path $bin.DirectoryName "ffprobe.exe") dist/RePic/
 
       - name: Montar pacote
         shell: pwsh
         run: |
-          Copy-Item target/release/ClipCraft.exe dist/ClipCraft/
-          Copy-Item dist-files/LEIA-ME.txt dist/ClipCraft/
-          Compress-Archive -Path dist/ClipCraft -DestinationPath ClipCraft-windows.zip
+          Copy-Item target/release/RePic.exe dist/RePic/
+          Copy-Item dist-files/LEIA-ME.txt dist/RePic/
+          Compress-Archive -Path dist/RePic -DestinationPath RePic-windows.zip
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ClipCraft-windows
-          path: ClipCraft-windows.zip
+          name: RePic-windows
+          path: RePic-windows.zip
 
       - name: Publicar release (só em tag v*)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: ClipCraft-windows.zip
+          files: RePic-windows.zip
           generate_release_notes: true

@@ -156,7 +156,7 @@ impl ClipApp {
                 Health::Error => Color32::GRAY,
             };
             ui.painter().circle_filled(rect.center(), 6.0, color);
-            ui.label(RichText::new("ClipCraft").size(22.0).strong());
+            ui.label(RichText::new("RePic").size(22.0).strong());
         });
         ui.label(RichText::new(&status.text).weak());
         if let Some((ok, msg)) = &status.last_event {
@@ -182,7 +182,7 @@ impl ClipApp {
                 .strong(),
             );
             ui.add_space(4.0);
-            ui.label("• O ClipCraft fica gravando em loop, só na memória/pasta temporária. Nada sai do seu PC.");
+            ui.label("• O RePic fica gravando em loop, só na memória/pasta temporária. Nada sai do seu PC.");
             ui.label("• Fechar esta janela não para a gravação: ele continua na bandeja, perto do relógio.");
             ui.label("• Pra sair de verdade: clique com o botão direito no ícone da bandeja → Sair.");
             ui.label("• Jogos em tela cheia exclusiva podem sair pretos. Use modo janela sem bordas.");

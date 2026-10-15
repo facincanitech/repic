@@ -1,12 +1,12 @@
-CLIPCRAFT
-=========
+REPIC
+=====
 
 1. Deixe os 3 arquivos juntos na mesma pasta:
-   ClipCraft.exe, ffmpeg.exe e ffprobe.exe
-2. Abra o ClipCraft.exe
+   RePic.exe, ffmpeg.exe e ffprobe.exe
+2. Abra o RePic.exe
 3. Jogue normalmente. Apertou F8, os últimos 30 segundos viram um clipe.
 
-Os clipes vão para: Vídeos\ClipCraft
+Os clipes vão para: Vídeos\RePic
 Fechar a janela não para o programa: ele fica na bandeja, perto do relógio.
 Para sair de verdade: botão direito no ícone da bandeja -> Sair.
 

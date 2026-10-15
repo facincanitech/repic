@@ -1,11 +1,11 @@
 [package]
-name = "clipcraft"
+name = "repic"
 version = "0.1.0"
 edition = "2024"
 description = "Clipador leve: aperta F8 e salva os ultimos segundos da tela"
 
 [[bin]]
-name = "ClipCraft"
+name = "RePic"
 path = "src/main.rs"
 
 [dependencies]

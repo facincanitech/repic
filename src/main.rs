@@ -55,7 +55,7 @@ fn main() -> eframe::Result {
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("ClipCraft")
+            .with_title("RePic")
             .with_inner_size([560.0, 640.0])
             .with_min_inner_size([420.0, 420.0])
             .with_icon(egui::IconData {
@@ -68,7 +68,7 @@ fn main() -> eframe::Result {
 
     let shared_for_app = shared.clone();
     let result = eframe::run_native(
-        "ClipCraft",
+        "RePic",
         options,
         Box::new(move |cc| {
             let shared = shared_for_app;
@@ -114,7 +114,7 @@ fn main() -> eframe::Result {
             }));
 
             // Bandeja.
-            let open_item = MenuItem::new("Abrir ClipCraft", true, None);
+            let open_item = MenuItem::new("Abrir RePic", true, None);
             let save_item = MenuItem::new("Salvar clipe agora", true, None);
             let quit_item = MenuItem::new("Sair", true, None);
             let menu = Menu::new();
@@ -129,7 +129,7 @@ fn main() -> eframe::Result {
                 .and_then(|icon| {
                     TrayIconBuilder::new()
                         .with_icon(icon)
-                        .with_tooltip(format!("ClipCraft — aperte {} pra clipar", cfg.hotkey))
+                        .with_tooltip(format!("RePic — aperte {} pra clipar", cfg.hotkey))
                         .with_menu(Box::new(menu))
                         .with_menu_on_left_click(false)
                         .build()

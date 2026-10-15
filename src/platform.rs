@@ -51,7 +51,7 @@ mod imp {
         .map(|j| j.0)
     }
 
-    /// Se o ClipCraft fechar (até crashando), o Windows mata o ffmpeg junto.
+    /// Se o RePic fechar (até crashando), o Windows mata o ffmpeg junto.
     pub fn tie_to_app(child: &std::process::Child) {
         if let Some(j) = job() {
             unsafe {
@@ -60,9 +60,9 @@ mod imp {
         }
     }
 
-    /// true se já tem outro ClipCraft aberto.
+    /// true se já tem outro RePic aberto.
     pub fn already_running() -> bool {
-        let name: Vec<u16> = "Local\\ClipCraftSingleInstance\0".encode_utf16().collect();
+        let name: Vec<u16> = "Local\\RePicSingleInstance\0".encode_utf16().collect();
         unsafe {
             let h = CreateMutexW(std::ptr::null(), 0, name.as_ptr());
             // O handle fica aberto até o processo morrer, de propósito.

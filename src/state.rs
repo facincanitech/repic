@@ -63,7 +63,7 @@ impl Shared {
                 PathBuf::from(name)
             }
         };
-        let temp = std::env::temp_dir().join("ClipCraft");
+        let temp = std::env::temp_dir().join("RePic");
         let paths = Paths {
             ffmpeg: find("ffmpeg"),
             ffprobe: find("ffprobe"),

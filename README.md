@@ -1,15 +1,15 @@
-# ClipCraft
+# RePic
 
 Aperta **F8** e os últimos **30 segundos** da tela viram um clipe.
 Sem login, sem conta, sem upload, sem overlay. Só um `.exe` leve na bandeja.
 
-> Feito pra meme. Quer usar, usa.
+> Vídeo é só um monte de pic em sequência. Feito pra meme. Quer usar, usa.
 
 ## Como usar
 
-1. Baixe o `ClipCraft-windows.zip` em **Releases** e extraia.
-2. Abra o `ClipCraft.exe` (deixe o `ffmpeg.exe` e o `ffprobe.exe` na mesma pasta).
-3. Jogue. Aconteceu algo épico? **F8**. Ouviu o "plim"? Tá salvo em `Vídeos\ClipCraft`.
+1. Baixe o `RePic-windows.zip` em **Releases** e extraia.
+2. Abra o `RePic.exe` (deixe o `ffmpeg.exe` e o `ffprobe.exe` na mesma pasta).
+3. Jogue. Aconteceu algo épico? **F8**. Ouviu o "plim"? Tá salvo em `Vídeos\RePic`.
 
 A janela tem só duas coisas: a explicação e o **histórico** dos clipes (assistir, mostrar na pasta, apagar).
 Fechar a janela deixa ele rodando na bandeja. Pra sair: botão direito no ícone → **Sair**.
@@ -25,7 +25,7 @@ Dá pra trocar direto na janela:
 | Tecla | F6 a F12 |
 | Som do PC | liga/desliga |
 
-Fica salvo em `%APPDATA%\ClipCraft\config.json`.
+Fica salvo em `%APPDATA%\RePic\config.json`.
 
 ## Por que é leve
 
@@ -48,7 +48,7 @@ Fica salvo em `%APPDATA%\ClipCraft\config.json`.
 cargo build --release
 ```
 
-Coloque o `ffmpeg.exe` e o `ffprobe.exe` ao lado do `target/release/ClipCraft.exe`.
+Coloque o `ffmpeg.exe` e o `ffprobe.exe` ao lado do `target/release/RePic.exe`.
 O GitHub Actions (`.github/workflows/build.yml`) faz tudo sozinho: compila, baixa o FFmpeg, monta o zip e, quando você cria uma tag `v*`, publica em Releases:
 
 ```bash

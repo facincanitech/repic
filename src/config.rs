@@ -27,7 +27,7 @@ impl Default for Config {
             fps: 60,
             hotkey: "F8".into(),
             audio: true,
-            output_dir: videos.join("ClipCraft"),
+            output_dir: videos.join("RePic"),
         }
     }
 }
@@ -35,7 +35,7 @@ impl Default for Config {
 pub fn app_dir() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(std::env::temp_dir)
-        .join("ClipCraft")
+        .join("RePic")
 }
 
 fn config_path() -> PathBuf {

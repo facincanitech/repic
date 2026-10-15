@@ -189,7 +189,7 @@ fn spawn_profile(shared: &Shared, profile: &Profile) -> Result<Running, String> 
 
     let mut child = cmd.spawn().map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
-            "ffmpeg.exe não encontrado. Ele precisa ficar na mesma pasta do ClipCraft.exe"
+            "ffmpeg.exe não encontrado. Ele precisa ficar na mesma pasta do RePic.exe"
                 .to_string()
         } else {
             format!("não consegui abrir o ffmpeg: {e}")
@@ -452,7 +452,7 @@ fn save_clip(shared: &Shared) -> Result<PathBuf, String> {
 
     std::fs::create_dir_all(&cfg.output_dir).map_err(|e| format!("pasta de saída: {e}"))?;
     let name = chrono::Local::now()
-        .format("Clip_%Y-%m-%d_%H-%M-%S.mp4")
+        .format("RePic_%Y-%m-%d_%H-%M-%S.mp4")
         .to_string();
     let out = cfg.output_dir.join(&name);
 
