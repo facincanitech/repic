@@ -111,6 +111,7 @@ fn main() -> eframe::Result {
                 {
                     shared.hwnd.store(w.hwnd.get(), Ordering::SeqCst);
                     platform::remember_window(w.hwnd.get());
+                    hotkey::set_window(w.hwnd.get());
                 }
             }
 

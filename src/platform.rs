@@ -20,7 +20,8 @@ pub fn hidden_command(program: &Path) -> Command {
 /// Um monitor que dá pra gravar.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Monitor {
-    /// Nome do Windows (`\\.\DISPLAY1`), é o que fica salvo no config.
+    /// O que fica salvo no config: placa + posição na placa ("10de:0").
+    /// O nome do Windows (`\\.\DISPLAY5`) muda quando monitores reconectam.
     pub id: String,
     pub label: String,
     pub primary: bool,
@@ -167,8 +168,6 @@ mod imp {
                     if let Ok(d) = output.GetDesc()
                         && d.AttachedToDesktop.as_bool()
                     {
-                        let len = d.DeviceName.iter().position(|&c| c == 0).unwrap_or(32);
-                        let id = String::from_utf16_lossy(&d.DeviceName[..len]);
                         let r = d.DesktopCoordinates;
                         out.push(Monitor {
                             label: String::new(),
@@ -181,7 +180,7 @@ mod imp {
                             y: r.top,
                             width: r.right - r.left,
                             height: r.bottom - r.top,
-                            id,
+                            id: String::new(),
                         });
                     }
                     o += 1;
@@ -194,6 +193,12 @@ mod imp {
         let t = crate::lang::t();
         for (i, m) in out.iter_mut().enumerate() {
             m.unique_vendor = vendors.iter().filter(|&&v| v == m.vendor_id).count() == 1;
+            // Fabricante não muda de ordem; o índice da placa pode mudar.
+            m.id = if m.unique_vendor {
+                format!("{:04x}:{}", m.vendor_id, m.output)
+            } else {
+                format!("gpu{}:{}", m.adapter, m.output)
+            };
             m.label = crate::lang::fill(t.monitor_label, &[&(i + 1), &m.width, &m.height]);
             if m.primary {
                 m.label.push_str(t.primary_suffix);
@@ -417,11 +422,12 @@ mod tests {
 
     #[test]
     fn pick_monitor_falls_back_to_primary() {
-        let list = [mon("\\\\.\\DISPLAY2", false), mon("\\\\.\\DISPLAY1", true)];
-        assert_eq!(pick_monitor(&list, "").unwrap().id, "\\\\.\\DISPLAY1");
-        assert_eq!(pick_monitor(&list, "\\\\.\\DISPLAY2").unwrap().id, "\\\\.\\DISPLAY2");
-        // Monitor desconectado: volta pro principal.
-        assert_eq!(pick_monitor(&list, "\\\\.\\DISPLAY9").unwrap().id, "\\\\.\\DISPLAY1");
+        let list = [mon("8086:0", false), mon("10de:0", true)];
+        assert_eq!(pick_monitor(&list, "").unwrap().id, "10de:0");
+        assert_eq!(pick_monitor(&list, "8086:0").unwrap().id, "8086:0");
+        // Monitor desconectado (ou config antigo com `\\.\DISPLAY5`): volta pro principal.
+        assert_eq!(pick_monitor(&list, "10de:3").unwrap().id, "10de:0");
+        assert_eq!(pick_monitor(&list, "\\\\.\\DISPLAY5").unwrap().id, "10de:0");
         assert!(pick_monitor(&[], "").is_none());
     }
 }

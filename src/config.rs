@@ -19,7 +19,7 @@ pub struct Config {
     pub mic: bool,
     /// true: o atalho clipa em qualquer lugar. false: só com jogo/app em tela cheia.
     pub anywhere: bool,
-    /// Monitor gravado (`\\.\DISPLAY2`). Vazio = o principal do Windows.
+    /// Monitor gravado (ver `platform::Monitor::id`). Vazio = o principal do Windows.
     pub monitor: String,
     pub output_dir: PathBuf,
 }
@@ -56,7 +56,8 @@ impl Config {
     pub fn load() -> Self {
         let mut cfg: Self = std::fs::read_to_string(config_path())
             .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
+            // O Bloco de Notas às vezes salva com BOM no começo.
+            .and_then(|s| serde_json::from_str(s.trim_start_matches('\u{feff}')).ok())
             .unwrap_or_default();
         cfg.validate();
         cfg
@@ -73,6 +74,11 @@ impl Config {
         }
         if self.shortcut.vk == 0 || self.shortcut.vk > 0xFE {
             self.shortcut = def.shortcut;
+        }
+        // v0.2 antigo guardava o nome do Windows (`\\.\DISPLAY5`), que muda
+        // sozinho. Esse formato vira "principal".
+        if self.monitor.starts_with("\\\\") {
+            self.monitor.clear();
         }
         if self.output_dir.as_os_str().is_empty() {
             self.output_dir = def.output_dir;
@@ -96,6 +102,7 @@ mod tests {
         let mut cfg = Config {
             seconds: 7,
             fps: 144,
+            monitor: "\\\\.\\DISPLAY8".into(),
             shortcut: Combo {
                 vk: 0,
                 ..Combo::default()
@@ -106,6 +113,14 @@ mod tests {
         assert_eq!(cfg.seconds, 30);
         assert_eq!(cfg.fps, 60);
         assert_eq!(cfg.shortcut, Combo::default());
+        assert!(cfg.monitor.is_empty());
+    }
+
+    #[test]
+    fn config_with_bom_still_parses() {
+        let s = "\u{feff}{\"seconds\":90}";
+        let cfg: Config = serde_json::from_str(s.trim_start_matches('\u{feff}')).unwrap();
+        assert_eq!(cfg.seconds, 90);
     }
 
     #[test]

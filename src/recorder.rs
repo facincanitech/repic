@@ -638,7 +638,7 @@ mod tests {
 
     fn mon(vendor_id: u32) -> Monitor {
         Monitor {
-            id: "\\\\.\\DISPLAY1".into(),
+            id: "10de:0".into(),
             label: String::new(),
             primary: true,
             adapter: 1,

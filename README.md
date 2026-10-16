@@ -41,7 +41,7 @@ Fica salvo em `%APPDATA%\RePic\config.json`.
 - **Buffer em pedaços de 2s** que se reaproveitam em loop (`-segment_wrap`): o disco nunca enche.
 - **Salvar não reprocessa o vídeo**: os pedaços são só emendados (`-c copy`), por isso é instantâneo.
 - **Som do PC e microfone** via WASAPI, guardados na memória e colados exatamente na janela de tempo do vídeo.
-- **Atalho por gancho de teclado**: só observa a tecla, não rouba ela do jogo.
+- **Atalho por Raw Input** (o jeito que os jogos leem o teclado): só observa a tecla, não rouba ela do jogo, e funciona com a janela fechada.
 - App em Rust + egui, sem Electron.
 
 ## Limitações conhecidas
@@ -72,7 +72,7 @@ src/
   app.rs       interface: grade de clipes, configurações, excluir
   recorder.rs  ffmpeg em loop + salvar clipe
   audio.rs     som do PC e microfone em buffer circular
-  hotkey.rs    atalho global (gancho de teclado)
+  hotkey.rs    atalho global (Raw Input)
   lang.rs      textos em português, inglês e espanhol
   platform.rs  coisas específicas do Windows (monitores, registro, diálogos)
   config.rs    configuração em JSON

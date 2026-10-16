@@ -1,12 +1,16 @@
-//! Atalho global via gancho de teclado do Windows (WH_KEYBOARD_LL).
+//! Atalho global via Raw Input do Windows (o mesmo jeito que os jogos leem
+//! o teclado).
 //!
-//! Diferente do RegisterHotKey, o gancho só *observa*: a tecla continua
-//! chegando no jogo ou onde você estiver digitando. Por isso qualquer tecla
-//! serve, sozinha ou com Ctrl/Alt/Shift. E como é a tecla física (código do
-//! Windows), funciona igual em qualquer layout de teclado (ABNT2, US…).
+//! - Só *observa*: a tecla continua chegando no jogo ou onde você digita,
+//!   então qualquer tecla serve, sozinha ou com Ctrl/Alt/Shift.
+//! - Chega mesmo com a janela fechada (RIDEV_INPUTSINK).
+//! - É uma fila de mensagens normal: não tem o problema do gancho de teclado
+//!   (WH_KEYBOARD_LL), que o Windows desliga sem avisar quando demora.
+//! - Usa a tecla física (código do Windows): igual em ABNT2, US…
 
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicIsize, Ordering};
 use std::sync::mpsc::Sender;
 
 /// Uma combinação de teclas.
@@ -51,6 +55,19 @@ fn is_modifier(vk: u32) -> bool {
     matches!(vk, 0x10..=0x12 | 0xA0..=0xA5 | 0x5B | 0x5C)
 }
 
+/// Uma tecla que chegou.
+#[derive(Clone, Copy)]
+struct Key {
+    vk: u32,
+    scan: u32,
+    extended: bool,
+    down: bool,
+    /// (ctrl, alt, shift) no momento.
+    mods: (bool, bool, bool),
+    /// A janela do RePic está na frente.
+    ours: bool,
+}
+
 #[derive(Default)]
 struct Hook {
     combo: Combo,
@@ -61,34 +78,31 @@ struct Hook {
 }
 
 impl Hook {
-    /// Decide o que fazer com uma tecla. `mods` = (ctrl, alt, shift) no momento.
-    fn on_key(
-        &mut self,
-        vk: u32,
-        scan: u32,
-        extended: bool,
-        down: bool,
-        mods: (bool, bool, bool),
-    ) -> Option<Event> {
-        if is_modifier(vk) {
+    fn on_key(&mut self, k: Key) -> Option<Event> {
+        if is_modifier(k.vk) {
             return None;
         }
-        if !down {
-            if vk == self.combo.vk {
+        if !k.down {
+            if k.vk == self.combo.vk {
                 self.held = false;
             }
             return None;
         }
         if self.capturing {
+            // Só aceita a tecla apertada na janela do RePic: senão pegaria
+            // o que você estiver digitando em outro programa.
+            if !k.ours {
+                return None;
+            }
             self.capturing = false;
-            if vk == VK_ESCAPE {
+            if k.vk == VK_ESCAPE {
                 return Some(Event::Captured(None));
             }
-            let (ctrl, alt, shift) = mods;
+            let (ctrl, alt, shift) = k.mods;
             self.combo = Combo {
-                vk,
-                scan,
-                extended,
+                vk: k.vk,
+                scan: k.scan,
+                extended: k.extended,
                 ctrl,
                 alt,
                 shift,
@@ -97,7 +111,7 @@ impl Hook {
             self.held = true;
             return Some(Event::Captured(Some(self.combo)));
         }
-        if vk != self.combo.vk {
+        if k.vk != self.combo.vk {
             return None;
         }
         if self.held {
@@ -105,11 +119,13 @@ impl Hook {
         }
         self.held = true;
         let c = self.combo;
-        (mods == (c.ctrl, c.alt, c.shift)).then_some(Event::Pressed)
+        (k.mods == (c.ctrl, c.alt, c.shift)).then_some(Event::Pressed)
     }
 }
 
 static HOOK: Mutex<Option<Hook>> = Mutex::new(None);
+/// HWND da janela do RePic (0 = ainda não abriu).
+static WINDOW: AtomicIsize = AtomicIsize::new(0);
 
 fn with_hook(f: impl FnOnce(&mut Hook)) {
     if let Some(h) = HOOK.lock().unwrap().as_mut() {
@@ -117,7 +133,12 @@ fn with_hook(f: impl FnOnce(&mut Hook)) {
     }
 }
 
-/// A próxima tecla apertada (em qualquer lugar) vira o atalho novo.
+/// Avisa qual é a janela do RePic (pra escolher a tecla só nela).
+pub fn set_window(hwnd: isize) {
+    WINDOW.store(hwnd, Ordering::SeqCst);
+}
+
+/// A próxima tecla apertada na janela do RePic vira o atalho novo.
 pub fn begin_capture() {
     with_hook(|h| h.capturing = true);
 }
@@ -126,8 +147,7 @@ pub fn cancel_capture() {
     with_hook(|h| h.capturing = false);
 }
 
-/// Liga o gancho de teclado. `handler` roda numa thread própria, nunca
-/// dentro do gancho (o Windows desliga ganchos que demoram).
+/// Começa a escutar o teclado. `handler` roda numa thread própria.
 pub fn start(combo: Combo, handler: impl Fn(Event) + Send + 'static) {
     let (tx, rx) = std::sync::mpsc::channel();
     *HOOK.lock().unwrap() = Some(Hook {
@@ -146,11 +166,10 @@ pub fn start(combo: Combo, handler: impl Fn(Event) + Send + 'static) {
     imp::install();
 }
 
-fn dispatch(vk: u32, scan: u32, extended: bool, down: bool, mods: (bool, bool, bool)) {
-    // try_lock: o gancho nunca pode travar o teclado esperando.
-    if let Ok(mut guard) = HOOK.try_lock()
-        && let Some(h) = guard.as_mut()
-        && let Some(ev) = h.on_key(vk, scan, extended, down, mods)
+fn dispatch(k: Key) {
+    let mut guard = HOOK.lock().unwrap();
+    if let Some(h) = guard.as_mut()
+        && let Some(ev) = h.on_key(k)
         && let Some(tx) = &h.tx
     {
         let _ = tx.send(ev);
@@ -192,70 +211,129 @@ fn key_name(c: &Combo) -> String {
 
 #[cfg(windows)]
 mod imp {
-    use windows_sys::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
+    use super::{Key, WINDOW};
+    use std::sync::atomic::Ordering;
+    use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
-    use windows_sys::Win32::System::Threading::{
-        GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_TIME_CRITICAL,
-    };
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, GetKeyNameTextW};
+    use windows_sys::Win32::UI::Input::{
+        GetRawInputData, HRAWINPUT, RAWINPUT, RAWINPUTDEVICE, RAWINPUTHEADER, RID_INPUT,
+        RIDEV_INPUTSINK, RIM_TYPEKEYBOARD, RegisterRawInputDevices,
+    };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        CallNextHookEx, GetMessageW, HC_ACTION, KBDLLHOOKSTRUCT, LLKHF_EXTENDED, MSG,
-        SetTimer, SetWindowsHookExW, UnhookWindowsHookEx, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP,
-        WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TIMER,
+        CreateWindowExW, DefWindowProcW, DispatchMessageW, GA_ROOT, GetAncestor,
+        GetForegroundWindow, GetMessageW, HWND_MESSAGE, MSG, RI_KEY_BREAK, RI_KEY_E0,
+        RegisterClassW, WM_INPUT, WNDCLASSW,
     };
 
     fn pressed(vk: i32) -> bool {
         unsafe { GetAsyncKeyState(vk) as u16 & 0x8000 != 0 }
     }
 
-    unsafe extern "system" fn proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-        // Aqui tem que ser rápido: se o gancho demorar, o Windows tira ele
-        // sem avisar. Nada de disco, log ou lock bloqueante.
-        if code == HC_ACTION as i32 {
-            let k = unsafe { &*(lparam as *const KBDLLHOOKSTRUCT) };
-            let msg = wparam as u32;
-            let down = msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN;
-            let up = msg == WM_KEYUP || msg == WM_SYSKEYUP;
-            if down || up {
-                // 0x11 Ctrl, 0x12 Alt, 0x10 Shift.
-                let mods = (pressed(0x11), pressed(0x12), pressed(0x10));
-                super::dispatch(k.vkCode, k.scanCode, k.flags & LLKHF_EXTENDED != 0, down, mods);
-            }
+    fn our_window_in_front() -> bool {
+        let ours = WINDOW.load(Ordering::SeqCst);
+        if ours == 0 {
+            return false;
         }
-        // Sempre passa a tecla adiante: o jogo recebe normalmente.
-        unsafe { CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam) }
+        unsafe {
+            let fg = GetForegroundWindow();
+            !fg.is_null() && GetAncestor(fg, GA_ROOT) as isize == ours
+        }
+    }
+
+    fn on_raw_input(lparam: LPARAM) {
+        // RAWINPUT de teclado é pequeno; buffer alinhado de sobra.
+        let mut buf = [0u64; 8];
+        let mut size = std::mem::size_of_val(&buf) as u32;
+        let got = unsafe {
+            GetRawInputData(
+                lparam as HRAWINPUT,
+                RID_INPUT,
+                buf.as_mut_ptr() as *mut core::ffi::c_void,
+                &mut size,
+                std::mem::size_of::<RAWINPUTHEADER>() as u32,
+            )
+        };
+        if got == u32::MAX || got == 0 {
+            return;
+        }
+        let raw = unsafe { &*(buf.as_ptr() as *const RAWINPUT) };
+        if raw.header.dwType != RIM_TYPEKEYBOARD {
+            return;
+        }
+        let kb = unsafe { raw.data.keyboard };
+        // 255 = pedaço "falso" de sequências especiais (ex.: Pause).
+        if kb.VKey == 0 || kb.VKey == 255 {
+            return;
+        }
+        let flags = kb.Flags as u32;
+        super::dispatch(Key {
+            vk: kb.VKey as u32,
+            scan: kb.MakeCode as u32,
+            extended: flags & RI_KEY_E0 != 0,
+            down: flags & RI_KEY_BREAK == 0,
+            // 0x11 Ctrl, 0x12 Alt, 0x10 Shift.
+            mods: (pressed(0x11), pressed(0x12), pressed(0x10)),
+            ours: our_window_in_front(),
+        });
+    }
+
+    unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        if msg == WM_INPUT {
+            on_raw_input(lparam);
+        }
+        // DefWindowProc também libera o RAWINPUT do sistema.
+        unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
     }
 
     pub fn install() {
         std::thread::Builder::new()
-            .name("hotkey-hook".into())
+            .name("hotkey-input".into())
             .spawn(|| unsafe {
-                // Jogo pesado deixa o PC engasgado; com prioridade alta o
-                // gancho responde a tempo e o Windows não remove ele.
-                SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+                let class: Vec<u16> = "RePicKeyboard\0".encode_utf16().collect();
                 let module = GetModuleHandleW(std::ptr::null());
-                let mut hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(proc), module, 0);
-                if hook.is_null() {
-                    eprintln!("não consegui instalar o gancho de teclado");
+                let wc = WNDCLASSW {
+                    lpfnWndProc: Some(wndproc),
+                    hInstance: module,
+                    lpszClassName: class.as_ptr(),
+                    ..std::mem::zeroed()
+                };
+                RegisterClassW(&wc);
+                // Janela invisível só pra receber mensagens.
+                let hwnd = CreateWindowExW(
+                    0,
+                    class.as_ptr(),
+                    class.as_ptr(),
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    HWND_MESSAGE,
+                    std::ptr::null_mut(),
+                    module,
+                    std::ptr::null(),
+                );
+                if hwnd.is_null() {
+                    eprintln!("atalho: não consegui criar a janela de mensagens");
+                    return;
                 }
-                // Mesmo assim, se o Windows tirar o gancho, ele não avisa.
-                // Então reinstala de tempos em tempos.
-                SetTimer(std::ptr::null_mut(), 0, 30_000, None);
-                // O gancho precisa de uma fila de mensagens rodando nessa thread.
+                let device = RAWINPUTDEVICE {
+                    usUsagePage: 0x01, // Generic Desktop
+                    usUsage: 0x06,     // Teclado
+                    dwFlags: RIDEV_INPUTSINK,
+                    hwndTarget: hwnd,
+                };
+                if RegisterRawInputDevices(&device, 1, std::mem::size_of::<RAWINPUTDEVICE>() as u32) == 0 {
+                    eprintln!("atalho: o Windows recusou o Raw Input");
+                    return;
+                }
                 let mut msg: MSG = std::mem::zeroed();
                 while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
-                    if msg.message == WM_TIMER {
-                        let fresh = SetWindowsHookExW(WH_KEYBOARD_LL, Some(proc), module, 0);
-                        if !fresh.is_null() {
-                            if !hook.is_null() {
-                                UnhookWindowsHookEx(hook);
-                            }
-                            hook = fresh;
-                        }
-                    }
+                    DispatchMessageW(&msg);
                 }
             })
-            .expect("thread do gancho");
+            .expect("thread do atalho");
     }
 
     pub fn key_name(scan: u32, extended: bool) -> String {
@@ -289,6 +367,17 @@ mod tests {
         }
     }
 
+    fn key(vk: u32, down: bool, mods: (bool, bool, bool)) -> Key {
+        Key {
+            vk,
+            scan: 0,
+            extended: false,
+            down,
+            mods,
+            ours: true,
+        }
+    }
+
     fn pressed(e: Option<Event>) -> bool {
         matches!(e, Some(Event::Pressed))
     }
@@ -296,10 +385,10 @@ mod tests {
     #[test]
     fn fires_once_per_press_not_while_holding() {
         let mut h = hook(Combo::default());
-        assert!(pressed(h.on_key(0x77, 0x42, false, true, NONE)));
-        assert!(!pressed(h.on_key(0x77, 0x42, false, true, NONE))); // repetição
-        h.on_key(0x77, 0x42, false, false, NONE); // soltou
-        assert!(pressed(h.on_key(0x77, 0x42, false, true, NONE)));
+        assert!(pressed(h.on_key(key(0x77, true, NONE))));
+        assert!(!pressed(h.on_key(key(0x77, true, NONE)))); // repetição
+        h.on_key(key(0x77, false, NONE)); // soltou
+        assert!(pressed(h.on_key(key(0x77, true, NONE))));
     }
 
     #[test]
@@ -309,9 +398,9 @@ mod tests {
             ..Combo::default()
         });
         // ' sozinha não dispara com Shift (Shift+' é aspas, outro atalho).
-        assert!(!pressed(h.on_key(VK_QUOTE_ABNT2, 0x29, false, true, SHIFT)));
-        h.on_key(VK_QUOTE_ABNT2, 0x29, false, false, NONE);
-        assert!(pressed(h.on_key(VK_QUOTE_ABNT2, 0x29, false, true, NONE)));
+        assert!(!pressed(h.on_key(key(VK_QUOTE_ABNT2, true, SHIFT))));
+        h.on_key(key(VK_QUOTE_ABNT2, false, NONE));
+        assert!(pressed(h.on_key(key(VK_QUOTE_ABNT2, true, NONE))));
     }
 
     #[test]
@@ -319,8 +408,8 @@ mod tests {
         let mut h = hook(Combo::default());
         h.capturing = true;
         // Apertar só o Shift não conta: espera a tecla de verdade.
-        assert!(h.on_key(0xA0, 0x2A, false, true, SHIFT).is_none());
-        match h.on_key(VK_QUOTE_ABNT2, 0x29, false, true, SHIFT) {
+        assert!(h.on_key(key(0xA0, true, SHIFT)).is_none());
+        match h.on_key(key(VK_QUOTE_ABNT2, true, SHIFT)) {
             Some(Event::Captured(Some(c))) => {
                 assert_eq!(c.vk, VK_QUOTE_ABNT2);
                 assert!(c.shift && !c.ctrl && !c.alt);
@@ -328,7 +417,24 @@ mod tests {
             _ => panic!("devia capturar"),
         }
         // O mesmo aperto que escolheu não clipa.
-        assert!(!pressed(h.on_key(VK_QUOTE_ABNT2, 0x29, false, true, SHIFT)));
+        assert!(!pressed(h.on_key(key(VK_QUOTE_ABNT2, true, SHIFT))));
+    }
+
+    #[test]
+    fn capture_ignores_keys_typed_in_other_programs() {
+        // Escolhendo tecla, mas digitando "n" em outro programa: não pega.
+        let mut h = hook(Combo::default());
+        h.capturing = true;
+        let elsewhere = Key {
+            ours: false,
+            ..key(0x4E, true, NONE)
+        };
+        assert!(h.on_key(elsewhere).is_none());
+        assert!(h.capturing, "continua esperando a tecla na janela do RePic");
+        assert!(matches!(
+            h.on_key(key(VK_QUOTE_ABNT2, true, NONE)),
+            Some(Event::Captured(Some(_)))
+        ));
     }
 
     #[test]
@@ -336,7 +442,7 @@ mod tests {
         let mut h = hook(Combo::default());
         h.capturing = true;
         assert!(matches!(
-            h.on_key(VK_ESCAPE, 0x01, false, true, NONE),
+            h.on_key(key(VK_ESCAPE, true, NONE)),
             Some(Event::Captured(None))
         ));
         assert_eq!(h.combo, Combo::default());

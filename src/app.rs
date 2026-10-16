@@ -473,6 +473,24 @@ impl ClipApp {
                 });
                 ui.label(RichText::new(cfg.output_dir.display().to_string()).weak().small());
             });
+
+            // Rodapé: versão e marca.
+            ui.add_space(10.0);
+            ui.vertical_centered(|ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    let weak = ui.visuals().weak_text_color();
+                    ui.label(
+                        RichText::new(concat!("RePic v", env!("CARGO_PKG_VERSION"), " · powered by"))
+                            .small()
+                            .color(weak),
+                    );
+                    ui.hyperlink_to(
+                        RichText::new("FacincaniTech").small().strong(),
+                        "https://facincanitech.github.io",
+                    );
+                });
+            });
         });
         if resp.should_close() && !self.capturing {
             close = true;
