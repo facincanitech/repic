@@ -1,10 +1,12 @@
 use crate::audio::AudioRing;
 use crate::config::{self, Config};
+use crate::hotkey::Combo;
 use eframe::egui;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Instant;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Health {
@@ -18,7 +20,7 @@ pub struct Status {
     pub health: Health,
     pub text: String,
     /// Última mensagem de salvamento ("Clipe salvo", erro, etc).
-    pub last_event: Option<(bool, String)>,
+    pub last_event: Option<(bool, String, Instant)>,
 }
 
 pub enum RecCmd {
@@ -38,8 +40,14 @@ pub struct Shared {
     pub config: Mutex<Config>,
     pub status: Mutex<Status>,
     pub paths: Paths,
+    /// Som do PC.
     pub audio: Arc<AudioRing>,
+    /// Microfone padrão do Windows.
+    pub mic: Arc<AudioRing>,
     pub saving: AtomicBool,
+    /// Resultado de "escolher atalho" vindo do gancho de teclado
+    /// (Some(None) = cancelou).
+    pub captured: Mutex<Option<Option<Combo>>>,
     pub history_dirty: AtomicBool,
     pub show_requested: AtomicBool,
     pub hwnd: AtomicIsize,
@@ -72,6 +80,7 @@ impl Shared {
             thumbs_dir: app.join("thumbs"),
         };
         let audio = AudioRing::new(config.audio, config.seconds);
+        let mic = AudioRing::new(config.mic, config.seconds);
         Arc::new(Self {
             config: Mutex::new(config),
             status: Mutex::new(Status {
@@ -81,7 +90,9 @@ impl Shared {
             }),
             paths,
             audio,
+            mic,
             saving: AtomicBool::new(false),
+            captured: Mutex::new(None),
             history_dirty: AtomicBool::new(true),
             show_requested: AtomicBool::new(false),
             hwnd: AtomicIsize::new(0),
@@ -104,7 +115,7 @@ impl Shared {
     }
 
     pub fn set_event(&self, ok: bool, text: impl Into<String>) {
-        self.status.lock().unwrap().last_event = Some((ok, text.into()));
+        self.status.lock().unwrap().last_event = Some((ok, text.into(), Instant::now()));
         self.repaint();
     }
 

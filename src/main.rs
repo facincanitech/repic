@@ -4,13 +4,16 @@
 mod app;
 mod audio;
 mod config;
+mod hotkey;
+mod lang;
 mod platform;
 mod recorder;
 mod state;
 
 use eframe::egui;
-use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use state::{RecCmd, Shared};
+use std::sync::atomic::Ordering;
+use std::time::{Duration, Instant};
 use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tray_icon::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 
@@ -43,21 +46,44 @@ fn icon_rgba(size: u32) -> Vec<u8> {
     px
 }
 
+pub fn tray_tooltip(hotkey: &str) -> String {
+    lang::fill(lang::t().tray_tip, &[&hotkey])
+}
+
+/// Espera um clipe que esteja sendo salvo terminar (no máximo 15s),
+/// pra não deixar um MP4 pela metade ao sair.
+fn wait_for_save(shared: &Shared) {
+    let start = Instant::now();
+    while shared.saving.load(Ordering::SeqCst) && start.elapsed() < Duration::from_secs(15) {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
 fn main() -> eframe::Result {
     if platform::already_running() {
+        // Abriu o .exe de novo: só traz a janela que já está rodando.
+        platform::focus_other_instance();
         return Ok(());
+    }
+    // Aberto pelo "Iniciar com o Windows": começa escondido na bandeja.
+    let start_hidden = std::env::args().any(|a| a == "--tray");
+    // Se o .exe mudou de pasta, atualiza o caminho do iniciar com o Windows.
+    if platform::autostart_enabled() {
+        let _ = platform::set_autostart(true);
     }
 
     let cfg = config::Config::load();
     let shared = Shared::new(cfg.clone());
-    audio::start(shared.audio.clone());
+    audio::start(shared.audio.clone(), audio::Source::Loopback);
+    audio::start(shared.mic.clone(), audio::Source::Mic);
     recorder::start(shared.clone());
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("RePic")
-            .with_inner_size([560.0, 640.0])
-            .with_min_inner_size([420.0, 420.0])
+            .with_inner_size([980.0, 660.0])
+            .with_min_inner_size([560.0, 440.0])
+            .with_visible(!start_hidden)
             .with_icon(egui::IconData {
                 rgba: icon_rgba(64),
                 width: 64,
@@ -73,50 +99,35 @@ fn main() -> eframe::Result {
         Box::new(move |cc| {
             let shared = shared_for_app;
             let _ = shared.ctx.set(cc.egui_ctx.clone());
-            cc.egui_ctx.set_visuals(egui::Visuals::dark());
+            app::apply_style(&cc.egui_ctx);
 
-            // Guarda o HWND pra conseguir reabrir a janela pela bandeja.
+            // Guarda o HWND pra conseguir reabrir a janela pela bandeja
+            // (e por uma segunda abertura do .exe).
             #[cfg(windows)]
             {
                 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-                if let Ok(h) = cc.window_handle() {
-                    if let RawWindowHandle::Win32(w) = h.as_raw() {
-                        shared
-                            .hwnd
-                            .store(w.hwnd.get(), std::sync::atomic::Ordering::SeqCst);
-                    }
+                if let Ok(h) = cc.window_handle()
+                    && let RawWindowHandle::Win32(w) = h.as_raw()
+                {
+                    shared.hwnd.store(w.hwnd.get(), Ordering::SeqCst);
+                    platform::remember_window(w.hwnd.get());
                 }
             }
 
-            // Atalho global (funciona com o jogo em foco).
-            let hotkey = app::hotkey_from_name(&cfg.hotkey);
-            let mut hotkey_error = None;
-            let manager = match GlobalHotKeyManager::new() {
-                Ok(m) => {
-                    if let Err(e) = m.register(hotkey) {
-                        hotkey_error = Some(format!(
-                            "{} já está em uso por outro programa ({e})",
-                            cfg.hotkey
-                        ));
-                    }
-                    Some(m)
-                }
-                Err(e) => {
-                    hotkey_error = Some(format!("Atalho global indisponível: {e}"));
-                    None
-                }
-            };
+            // Atalho global (funciona com o jogo em foco e com a janela fechada).
             let s = shared.clone();
-            GlobalHotKeyEvent::set_event_handler(Some(move |ev: GlobalHotKeyEvent| {
-                if ev.state == HotKeyState::Pressed {
-                    recorder::trigger_save(s.clone());
+            hotkey::start(cfg.shortcut, move |ev| match ev {
+                hotkey::Event::Pressed => recorder::hotkey_pressed(s.clone()),
+                hotkey::Event::Captured(c) => {
+                    *s.captured.lock().unwrap() = Some(c);
+                    s.repaint();
                 }
-            }));
+            });
 
             // Bandeja.
-            let open_item = MenuItem::new("Abrir RePic", true, None);
-            let save_item = MenuItem::new("Salvar clipe agora", true, None);
-            let quit_item = MenuItem::new("Sair", true, None);
+            let open_item = MenuItem::new(lang::t().tray_open, true, None);
+            let save_item = MenuItem::new(lang::t().tray_save, true, None);
+            let quit_item = MenuItem::new(lang::t().tray_quit, true, None);
             let menu = Menu::new();
             let _ = menu.append_items(&[
                 &open_item,
@@ -129,7 +140,7 @@ fn main() -> eframe::Result {
                 .and_then(|icon| {
                     TrayIconBuilder::new()
                         .with_icon(icon)
-                        .with_tooltip(format!("RePic — aperte {} pra clipar", cfg.hotkey))
+                        .with_tooltip(tray_tooltip(&hotkey::label(&cfg.shortcut)))
                         .with_menu(Box::new(menu))
                         .with_menu_on_left_click(false)
                         .build()
@@ -148,9 +159,10 @@ fn main() -> eframe::Result {
                 } else if ev.id == save_id {
                     recorder::trigger_save(s.clone());
                 } else if ev.id == quit_id {
+                    wait_for_save(&s);
                     s.send(RecCmd::Quit);
                     // Dá tempo do ffmpeg fechar e limpar o buffer.
-                    std::thread::sleep(std::time::Duration::from_millis(400));
+                    std::thread::sleep(Duration::from_millis(400));
                     std::process::exit(0);
                 }
             }));
@@ -165,17 +177,12 @@ fn main() -> eframe::Result {
                 _ => {}
             }));
 
-            Ok(Box::new(app::ClipApp::new(
-                shared,
-                manager,
-                hotkey,
-                hotkey_error,
-                tray,
-            )))
+            Ok(Box::new(app::ClipApp::new(shared, tray)))
         }),
     );
 
+    wait_for_save(&shared);
     shared.send(RecCmd::Quit);
-    std::thread::sleep(std::time::Duration::from_millis(300));
+    std::thread::sleep(Duration::from_millis(300));
     result
 }

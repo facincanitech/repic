@@ -1,30 +1,51 @@
-use crate::config::{FPS_OPTIONS, HOTKEY_OPTIONS, SECONDS_OPTIONS};
-use crate::platform;
+//! Janela: barra de cima (status + clipar), grade com os últimos clipes,
+//! e as configurações num modal.
+
+use crate::config::{FPS_OPTIONS, SECONDS_OPTIONS};
+use crate::hotkey;
+use crate::lang::{fill, t};
+use crate::platform::{self, Monitor};
 use crate::recorder;
 use crate::state::{Health, RecCmd, Shared};
-use eframe::egui::{self, Color32, RichText, Vec2};
-use global_hotkey::GlobalHotKeyManager;
-use global_hotkey::hotkey::{Code, HotKey};
+use eframe::egui::{self, Color32, CornerRadius, RichText, Stroke, Vec2};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::time::{Instant, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 const ACCENT: Color32 = Color32::from_rgb(235, 64, 64);
-const THUMB: Vec2 = Vec2::new(128.0, 72.0);
+const OK_GREEN: Color32 = Color32::from_rgb(110, 200, 120);
+const BG: Color32 = Color32::from_rgb(17, 17, 21);
+const CARD: Color32 = Color32::from_rgb(27, 27, 33);
+const CARD_HOVER: Color32 = Color32::from_rgb(36, 36, 44);
+/// Na janela padrão cabem 3 por linha; maior/menor, ajusta sozinho.
+const CARD_MIN_W: f32 = 280.0;
+const GAP: f32 = 12.0;
+/// Quanto tempo a mensagem ("Clipe salvo", "Exportado"…) fica na tela.
+const EVENT_SECS: u64 = 6;
 
-pub fn hotkey_from_name(name: &str) -> HotKey {
-    let code = match name {
-        "F6" => Code::F6,
-        "F7" => Code::F7,
-        "F9" => Code::F9,
-        "F10" => Code::F10,
-        "F11" => Code::F11,
-        "F12" => Code::F12,
-        _ => Code::F8,
-    };
-    HotKey::new(None, code)
+pub fn apply_style(ctx: &egui::Context) {
+    let mut v = egui::Visuals::dark();
+    v.panel_fill = BG;
+    v.window_fill = Color32::from_rgb(24, 24, 30);
+    v.extreme_bg_color = Color32::from_rgb(12, 12, 15);
+    v.window_corner_radius = CornerRadius::same(12);
+    v.selection.bg_fill = ACCENT.gamma_multiply(0.7);
+    for w in [
+        &mut v.widgets.inactive,
+        &mut v.widgets.hovered,
+        &mut v.widgets.active,
+        &mut v.widgets.open,
+    ] {
+        // Mais que isso deixa a caixinha de marcar redonda.
+        w.corner_radius = CornerRadius::same(4);
+    }
+    ctx.set_visuals(v);
+    ctx.all_styles_mut(|s| {
+        s.spacing.button_padding = Vec2::new(10.0, 5.0);
+        s.spacing.item_spacing = Vec2::new(8.0, 6.0);
+    });
 }
 
 struct Clip {
@@ -36,34 +57,31 @@ struct Clip {
 
 pub struct ClipApp {
     shared: Arc<Shared>,
-    hotkeys: Option<GlobalHotKeyManager>,
-    current_hotkey: HotKey,
-    hotkey_error: Option<String>,
-    _tray: Option<tray_icon::TrayIcon>,
+    tray: Option<tray_icon::TrayIcon>,
     clips: Vec<Clip>,
     last_scan: Instant,
     thumbs: HashMap<PathBuf, Option<egui::TextureHandle>>,
     confirm_delete: Option<PathBuf>,
+    settings_open: bool,
+    /// Esperando a pessoa apertar o novo atalho.
+    capturing: bool,
+    monitors: Vec<Monitor>,
+    autostart: bool,
 }
 
 impl ClipApp {
-    pub fn new(
-        shared: Arc<Shared>,
-        hotkeys: Option<GlobalHotKeyManager>,
-        current_hotkey: HotKey,
-        hotkey_error: Option<String>,
-        tray: Option<tray_icon::TrayIcon>,
-    ) -> Self {
+    pub fn new(shared: Arc<Shared>, tray: Option<tray_icon::TrayIcon>) -> Self {
         Self {
             shared,
-            hotkeys,
-            current_hotkey,
-            hotkey_error,
-            _tray: tray,
+            tray,
             clips: Vec::new(),
-            last_scan: Instant::now() - std::time::Duration::from_secs(60),
+            last_scan: Instant::now() - Duration::from_secs(60),
             thumbs: HashMap::new(),
             confirm_delete: None,
+            settings_open: false,
+            capturing: false,
+            monitors: Vec::new(),
+            autostart: platform::autostart_enabled(),
         }
     }
 
@@ -81,7 +99,7 @@ impl ClipApp {
                         let meta = e.metadata().ok()?;
                         let modified = meta.modified().ok()?;
                         let when = chrono::DateTime::<chrono::Local>::from(modified)
-                            .format("%d/%m/%Y às %H:%M:%S")
+                            .format(t().date_fmt)
                             .to_string();
                         Some((
                             modified,
@@ -98,7 +116,9 @@ impl ClipApp {
             .unwrap_or_default();
         clips.sort_by(|a, b| b.0.cmp(&a.0));
         self.clips = clips.into_iter().map(|(_, c)| c).collect();
-        self.thumbs.retain(|_, t| t.is_some());
+        // Esquece miniaturas que faltaram (tenta de novo) e de clipes que sumiram.
+        let alive: std::collections::HashSet<&PathBuf> = self.clips.iter().map(|c| &c.path).collect();
+        self.thumbs.retain(|p, t| t.is_some() && alive.contains(p));
         self.last_scan = Instant::now();
     }
 
@@ -119,32 +139,50 @@ impl ClipApp {
         tex
     }
 
-    fn change_hotkey(&mut self, name: &str) {
-        let new = hotkey_from_name(name);
-        if let Some(m) = &self.hotkeys {
-            let _ = m.unregister(self.current_hotkey);
-            match m.register(new) {
-                Ok(()) => {
-                    self.current_hotkey = new;
-                    self.hotkey_error = None;
-                }
-                Err(e) => {
-                    self.hotkey_error =
-                        Some(format!("{name} já está em uso por outro programa ({e})"));
-                    let _ = m.register(self.current_hotkey);
-                    return;
-                }
-            }
+    // --- Atalho ----------------------------------------------------------
+    // Quem escuta a tecla nova é o gancho de teclado (hotkey.rs), não a
+    // janela: assim pega a tecla física certa em qualquer layout.
+
+    fn start_capture(&mut self) {
+        *self.shared.captured.lock().unwrap() = None;
+        hotkey::begin_capture();
+        self.capturing = true;
+    }
+
+    fn cancel_capture(&mut self) {
+        hotkey::cancel_capture();
+        self.capturing = false;
+    }
+
+    /// Recebe o atalho escolhido (ou o Esc) do gancho.
+    fn handle_capture(&mut self, ctx: &egui::Context) {
+        let Some(result) = self.shared.captured.lock().unwrap().take() else {
+            return;
+        };
+        self.capturing = false;
+        // O Esc de cancelar não fecha as configurações junto.
+        ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+        let Some(combo) = result else {
+            return;
+        };
+        let label = hotkey::label(&combo);
+        if let Some(t) = &self.tray {
+            let _ = t.set_tooltip(Some(crate::tray_tooltip(&label)));
         }
         let mut cfg = self.shared.config.lock().unwrap();
-        cfg.hotkey = name.to_string();
+        cfg.shortcut = combo;
         cfg.save();
     }
 
-    fn header(&self, ui: &mut egui::Ui) {
+    // --- Barra de cima ---------------------------------------------------
+
+    fn top_bar(&mut self, ui: &mut egui::Ui) {
         let status = self.shared.status.lock().unwrap().clone();
+        let cfg = self.shared.config();
+        let saving = self.shared.saving.load(Ordering::SeqCst);
+
         ui.horizontal(|ui| {
-            let (rect, _) = ui.allocate_exact_size(Vec2::splat(14.0), egui::Sense::hover());
+            let (rect, _) = ui.allocate_exact_size(Vec2::splat(16.0), egui::Sense::hover());
             let color = match status.health {
                 Health::Recording => {
                     // Bolinha "REC" pulsando.
@@ -155,123 +193,72 @@ impl ClipApp {
                 Health::Starting => Color32::from_rgb(230, 180, 60),
                 Health::Error => Color32::GRAY,
             };
-            ui.painter().circle_filled(rect.center(), 6.0, color);
-            ui.label(RichText::new("RePic").size(22.0).strong());
-        });
-        ui.label(RichText::new(&status.text).weak());
-        if let Some((ok, msg)) = &status.last_event {
-            let color = if *ok {
-                Color32::from_rgb(110, 200, 120)
-            } else {
-                ACCENT
-            };
-            ui.label(RichText::new(msg).color(color));
-        }
-    }
+            ui.painter().circle_filled(rect.center(), 7.0, color);
+            ui.label(RichText::new("RePic").size(24.0).strong());
 
-    fn explanation(&self, ui: &mut egui::Ui) {
-        let cfg = self.shared.config();
-        egui::Frame::group(ui.style()).inner_margin(12.0).show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.label(
-                RichText::new(format!(
-                    "Aperte {} a qualquer momento e os últimos {} segundos viram um clipe.",
-                    cfg.hotkey, cfg.seconds
-                ))
-                .size(15.0)
-                .strong(),
-            );
-            ui.add_space(4.0);
-            ui.label("• O RePic fica gravando em loop, só na memória/pasta temporária. Nada sai do seu PC.");
-            ui.label("• Fechar esta janela não para a gravação: ele continua na bandeja, perto do relógio.");
-            ui.label("• Pra sair de verdade: clique com o botão direito no ícone da bandeja → Sair.");
-            ui.label("• Jogos em tela cheia exclusiva podem sair pretos. Use modo janela sem bordas.");
-        });
-    }
-
-    fn settings(&mut self, ui: &mut egui::Ui) {
-        let mut cfg = self.shared.config();
-        let before = cfg.clone();
-        let mut hotkey = cfg.hotkey.clone();
-
-        ui.horizontal_wrapped(|ui| {
-            egui::ComboBox::from_label("duração")
-                .selected_text(format!("{}s", cfg.seconds))
-                .show_ui(ui, |ui| {
-                    for s in SECONDS_OPTIONS {
-                        ui.selectable_value(&mut cfg.seconds, s, format!("{s}s"));
-                    }
-                });
-            ui.add_space(8.0);
-            egui::ComboBox::from_label("fps")
-                .selected_text(cfg.fps.to_string())
-                .show_ui(ui, |ui| {
-                    for f in FPS_OPTIONS {
-                        ui.selectable_value(&mut cfg.fps, f, f.to_string());
-                    }
-                });
-            ui.add_space(8.0);
-            egui::ComboBox::from_label("tecla")
-                .selected_text(&hotkey)
-                .show_ui(ui, |ui| {
-                    for k in HOTKEY_OPTIONS {
-                        ui.selectable_value(&mut hotkey, k.to_string(), k);
-                    }
-                });
-            ui.add_space(8.0);
-            ui.checkbox(&mut cfg.audio, "som do PC");
-        });
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(format!("Pasta: {}", cfg.output_dir.display())).weak());
-            if ui.small_button("Abrir pasta").clicked() {
-                let _ = std::fs::create_dir_all(&cfg.output_dir);
-                platform::open_path(&cfg.output_dir);
-            }
-        });
-        if let Some(err) = &self.hotkey_error {
-            ui.label(RichText::new(err).color(ACCENT));
-        }
-
-        if hotkey != cfg.hotkey {
-            self.change_hotkey(&hotkey);
-        }
-        if cfg != before {
-            let needs_restart = cfg.fps != before.fps || cfg.seconds != before.seconds;
-            self.shared
-                .audio
-                .enabled
-                .store(cfg.audio, Ordering::Relaxed);
-            self.shared.audio.set_keep_secs(cfg.seconds);
-            cfg.hotkey = self.shared.config().hotkey; // já salvo em change_hotkey
-            cfg.save();
-            *self.shared.config.lock().unwrap() = cfg;
-            if needs_restart {
-                self.shared.send(RecCmd::Restart);
-            }
-        }
-    }
-
-    fn history(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            ui.label(RichText::new("Histórico").size(17.0).strong());
-            ui.label(RichText::new(format!("({})", self.clips.len())).weak());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let saving = self.shared.saving.load(Ordering::SeqCst);
-                let btn = egui::Button::new(RichText::new("● Salvar agora").color(Color32::WHITE))
-                    .fill(ACCENT);
+                if ui
+                    .add(egui::Button::new(RichText::new("⚙").size(18.0)).min_size(Vec2::splat(34.0)))
+                    .on_hover_text(t().settings)
+                    .clicked()
+                {
+                    self.open_settings();
+                }
+                let label = if saving {
+                    t().saving_btn.to_string()
+                } else {
+                    format!("{}  ·  {}", t().clip_now, hotkey::label(&cfg.shortcut))
+                };
+                let btn = egui::Button::new(RichText::new(label).color(Color32::WHITE).strong())
+                    .fill(ACCENT)
+                    .min_size(Vec2::new(0.0, 34.0));
                 if ui.add_enabled(!saving, btn).clicked() {
                     recorder::trigger_save(self.shared.clone());
                 }
             });
         });
-        ui.add_space(4.0);
+
+        let color = if status.health == Health::Error {
+            ACCENT
+        } else {
+            ui.visuals().weak_text_color()
+        };
+        ui.label(RichText::new(&status.text).color(color));
+
+        if let Some((ok, msg, at)) = &status.last_event
+            && (saving || at.elapsed() < Duration::from_secs(EVENT_SECS))
+        {
+            ui.label(RichText::new(msg).color(if *ok { OK_GREEN } else { ACCENT }));
+        }
+    }
+
+    // --- Grade de clipes -------------------------------------------------
+
+    fn clips_grid(&mut self, ui: &mut egui::Ui) {
+        let cfg = self.shared.config();
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(t().recent).size(18.0).strong());
+            ui.label(RichText::new(format!("{}", self.clips.len())).weak());
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button(t().open_folder).clicked() {
+                    let _ = std::fs::create_dir_all(&cfg.output_dir);
+                    platform::open_path(&cfg.output_dir);
+                }
+            });
+        });
+        ui.add_space(6.0);
 
         if self.clips.is_empty() {
-            ui.add_space(30.0);
+            ui.add_space(60.0);
             ui.vertical_centered(|ui| {
-                ui.label(RichText::new("Nenhum clipe ainda.").weak());
-                let key = self.shared.config().hotkey;
-                ui.label(RichText::new(format!("Joga um pouco e aperta {key} kkk")).weak());
+                ui.label(RichText::new("🎬").size(48.0));
+                ui.add_space(8.0);
+                let key = hotkey::label(&cfg.shortcut);
+                let title = fill(t().empty_title, &[&key, &cfg.seconds]);
+                ui.label(RichText::new(title).size(17.0).strong());
+                ui.add_space(4.0);
+                ui.label(RichText::new(t().empty_1).weak());
+                ui.label(RichText::new(t().empty_2).weak());
             });
             return;
         }
@@ -280,86 +267,368 @@ impl ClipApp {
         let paths: Vec<PathBuf> = self.clips.iter().map(|c| c.path.clone()).collect();
         let thumbs: Vec<Option<egui::TextureHandle>> =
             paths.iter().map(|p| self.thumb(&ctx, p)).collect();
-        let mut delete: Option<PathBuf> = None;
+        let mut clicked: Option<(Action, usize)> = None;
 
         egui::ScrollArea::vertical()
             .auto_shrink([false; 2])
             .show(ui, |ui| {
-                for (clip, tex) in self.clips.iter().zip(thumbs) {
-                    egui::Frame::group(ui.style())
-                        .inner_margin(8.0)
-                        .show(ui, |ui| {
-                            ui.set_width(ui.available_width());
-                            ui.horizontal(|ui| {
-                                match tex {
-                                    Some(t) => {
-                                        let r = ui.add(
-                                            egui::Image::new((t.id(), THUMB))
-                                                .corner_radius(4.0)
-                                                .sense(egui::Sense::click()),
-                                        );
-                                        if r.on_hover_text("Assistir").clicked() {
-                                            platform::open_path(&clip.path);
-                                        }
-                                    }
-                                    None => {
-                                        let (rect, _) =
-                                            ui.allocate_exact_size(THUMB, egui::Sense::hover());
-                                        ui.painter().rect_filled(rect, 4.0, Color32::from_gray(40));
-                                        ui.painter().text(
-                                            rect.center(),
-                                            egui::Align2::CENTER_CENTER,
-                                            "▶",
-                                            egui::FontId::proportional(22.0),
-                                            Color32::GRAY,
-                                        );
-                                    }
+                let avail = ui.available_width() - 4.0;
+                let cols = (((avail + GAP) / (CARD_MIN_W + GAP)).floor() as usize).max(1);
+                let card_w = (avail - GAP * (cols - 1) as f32) / cols as f32;
+                for (r, (row, row_thumbs)) in
+                    self.clips.chunks(cols).zip(thumbs.chunks(cols)).enumerate()
+                {
+                    ui.horizontal_top(|ui| {
+                        ui.spacing_mut().item_spacing.x = GAP;
+                        for (c, (clip, tex)) in row.iter().zip(row_thumbs).enumerate() {
+                            let down = egui::Layout::top_down(egui::Align::Min);
+                            ui.allocate_ui_with_layout(Vec2::new(card_w, 0.0), down, |ui| {
+                                ui.set_width(card_w);
+                                if let Some(action) = clip_card(ui, clip, tex.as_ref(), card_w) {
+                                    clicked = Some((action, r * cols + c));
                                 }
-                                ui.vertical(|ui| {
-                                    ui.label(RichText::new(&clip.name).strong());
-                                    ui.label(
-                                        RichText::new(format!(
-                                            "{} · {:.1} MB",
-                                            clip.when, clip.size_mb
-                                        ))
-                                        .weak(),
-                                    );
-                                    ui.horizontal(|ui| {
-                                        if ui.button("▶ Assistir").clicked() {
-                                            platform::open_path(&clip.path);
-                                        }
-                                        if ui.button("📁 Mostrar").clicked() {
-                                            platform::reveal_path(&clip.path);
-                                        }
-                                        if self.confirm_delete.as_ref() == Some(&clip.path) {
-                                            if ui
-                                                .button(RichText::new("Confirmar").color(ACCENT))
-                                                .clicked()
-                                            {
-                                                delete = Some(clip.path.clone());
-                                            }
-                                            if ui.button("Cancelar").clicked() {
-                                                self.confirm_delete = None;
-                                            }
-                                        } else if ui.button("🗑 Apagar").clicked() {
-                                            self.confirm_delete = Some(clip.path.clone());
-                                        }
-                                    });
-                                });
                             });
-                        });
-                    ui.add_space(4.0);
+                        }
+                    });
+                    ui.add_space(GAP);
                 }
             });
 
-        if let Some(path) = delete {
-            let _ = std::fs::remove_file(&path);
-            let _ = std::fs::remove_file(recorder::thumb_path(&self.shared, &path));
-            self.thumbs.remove(&path);
-            self.confirm_delete = None;
-            self.shared.history_dirty.store(true, Ordering::SeqCst);
+        if let Some((action, i)) = clicked {
+            let path = self.clips[i].path.clone();
+            let name = self.clips[i].name.clone();
+            self.run_action(action, path, &name);
         }
     }
+
+    fn run_action(&mut self, action: Action, path: PathBuf, name: &str) {
+        match action {
+            Action::Play => platform::open_path(&path),
+            Action::Reveal => platform::reveal_path(&path),
+            Action::Export => {
+                if let Some(dest) = platform::save_dialog(name) {
+                    match std::fs::copy(&path, &dest) {
+                        Ok(_) => self
+                            .shared
+                            .set_event(true, fill(t().exported, &[&dest.display()])),
+                        Err(e) => self.shared.set_event(false, fill(t().export_failed, &[&e])),
+                    }
+                }
+            }
+            Action::Delete => self.confirm_delete = Some(path),
+        }
+    }
+
+    fn delete_modal(&mut self, ctx: &egui::Context) {
+        let Some(path) = self.confirm_delete.clone() else {
+            return;
+        };
+        let name = path.file_name().unwrap_or_default().to_string_lossy().to_string();
+        let mut close = false;
+        let resp = egui::Modal::new(egui::Id::new("confirm_delete")).show(ctx, |ui| {
+            ui.set_width(340.0);
+            ui.label(RichText::new(t().delete_title).size(18.0).strong());
+            ui.add_space(4.0);
+            ui.label(fill(t().delete_body, &[&name]));
+            ui.add_space(10.0);
+            ui.horizontal(|ui| {
+                let del = egui::Button::new(RichText::new(t().delete).color(Color32::WHITE)).fill(ACCENT);
+                if ui.add(del).clicked() {
+                    match std::fs::remove_file(&path) {
+                        Ok(()) => {
+                            let _ = std::fs::remove_file(recorder::thumb_path(&self.shared, &path));
+                            self.thumbs.remove(&path);
+                            self.shared.history_dirty.store(true, Ordering::SeqCst);
+                        }
+                        Err(e) => self.shared.set_event(false, fill(t().delete_failed, &[&e])),
+                    }
+                    close = true;
+                }
+                if ui.button(t().cancel).clicked() {
+                    close = true;
+                }
+            });
+        });
+        if close || resp.should_close() {
+            self.confirm_delete = None;
+        }
+    }
+
+    // --- Configurações ---------------------------------------------------
+
+    fn open_settings(&mut self) {
+        self.monitors = platform::list_monitors();
+        self.autostart = platform::autostart_enabled();
+        self.settings_open = true;
+    }
+
+    fn settings_modal(&mut self, ctx: &egui::Context) {
+        if !self.settings_open {
+            return;
+        }
+        let mut cfg = self.shared.config();
+        let before = cfg.clone();
+        let mut autostart = self.autostart;
+        let mut change_key = false;
+        let mut pick_dir = false;
+        let mut close = false;
+
+        let resp = egui::Modal::new(egui::Id::new("settings")).show(ctx, |ui| {
+            ui.set_width(460.0);
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(t().settings).size(20.0).strong());
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button("✖").on_hover_text(t().close).clicked() {
+                        close = true;
+                    }
+                });
+            });
+            ui.add_space(6.0);
+
+            section(ui, t().sec_shortcut, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(t().key_to_clip);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if self.capturing {
+                            if ui.button(t().cancel).clicked() {
+                                change_key = true;
+                            }
+                            ui.label(RichText::new(t().press_key).color(ACCENT));
+                        } else {
+                            if ui.button(t().change).clicked() {
+                                change_key = true;
+                            }
+                            key_chip(ui, &hotkey::label(&cfg.shortcut));
+                        }
+                    });
+                });
+                hint(ui, t().shortcut_hint);
+            });
+
+            section(ui, t().sec_recording, |ui| {
+                egui::Grid::new("rec_grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
+                    ui.label(t().duration);
+                    egui::ComboBox::from_id_salt("dur")
+                        .selected_text(fill(t().last_secs, &[&cfg.seconds]))
+                        .show_ui(ui, |ui| {
+                            for s in SECONDS_OPTIONS {
+                                ui.selectable_value(&mut cfg.seconds, s, fill(t().last_secs, &[&s]));
+                            }
+                        });
+                    ui.end_row();
+
+                    ui.label(t().quality);
+                    egui::ComboBox::from_id_salt("fps")
+                        .selected_text(format!("{} fps", cfg.fps))
+                        .show_ui(ui, |ui| {
+                            for f in FPS_OPTIONS {
+                                ui.selectable_value(&mut cfg.fps, f, format!("{f} fps"));
+                            }
+                        });
+                    ui.end_row();
+
+                    ui.label(t().monitor);
+                    let current = if cfg.monitor.is_empty() {
+                        t().primary_windows.to_string()
+                    } else {
+                        self.monitors
+                            .iter()
+                            .find(|m| m.id == cfg.monitor)
+                            .map(|m| m.label.clone())
+                            .unwrap_or_else(|| t().disconnected.into())
+                    };
+                    egui::ComboBox::from_id_salt("mon")
+                        .selected_text(current)
+                        .width(220.0)
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut cfg.monitor, String::new(), t().primary_windows);
+                            for m in &self.monitors {
+                                ui.selectable_value(&mut cfg.monitor, m.id.clone(), &m.label);
+                            }
+                        });
+                    ui.end_row();
+                });
+                ui.add_space(4.0);
+                ui.checkbox(&mut cfg.anywhere, t().anywhere);
+                hint(ui, if cfg.anywhere { t().anywhere_on } else { t().anywhere_off });
+            });
+
+            section(ui, t().sec_audio, |ui| {
+                ui.checkbox(&mut cfg.audio, t().pc_audio);
+                ui.checkbox(&mut cfg.mic, t().mic);
+                hint(ui, t().mic_hint);
+            });
+
+            section(ui, t().sec_system, |ui| {
+                ui.checkbox(&mut autostart, t().autostart);
+                hint(ui, t().autostart_hint);
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    ui.label(t().clips_folder);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button(t().change_folder).clicked() {
+                            pick_dir = true;
+                        }
+                    });
+                });
+                ui.label(RichText::new(cfg.output_dir.display().to_string()).weak().small());
+            });
+        });
+        if resp.should_close() && !self.capturing {
+            close = true;
+        }
+
+        // Aplica o que mudou.
+        if change_key {
+            if self.capturing {
+                self.cancel_capture();
+            } else {
+                self.start_capture();
+            }
+        }
+        if pick_dir && let Some(dir) = platform::pick_folder(&cfg.output_dir) {
+            cfg.output_dir = dir;
+        }
+        if autostart != self.autostart {
+            match platform::set_autostart(autostart) {
+                Ok(()) => self.autostart = autostart,
+                Err(e) => self.shared.set_event(false, fill(t().autostart_failed, &[&e])),
+            }
+        }
+        if cfg != before {
+            let needs_restart =
+                cfg.fps != before.fps || cfg.seconds != before.seconds || cfg.monitor != before.monitor;
+            self.shared.audio.enabled.store(cfg.audio, Ordering::Relaxed);
+            self.shared.mic.enabled.store(cfg.mic, Ordering::Relaxed);
+            self.shared.audio.set_keep_secs(cfg.seconds);
+            self.shared.mic.set_keep_secs(cfg.seconds);
+            if cfg.output_dir != before.output_dir {
+                self.shared.history_dirty.store(true, Ordering::SeqCst);
+            }
+            cfg.shortcut = self.shared.config().shortcut; // salvo à parte em handle_capture
+            cfg.save();
+            *self.shared.config.lock().unwrap() = cfg;
+            if needs_restart {
+                self.shared.send(RecCmd::Restart);
+            }
+        }
+        if close {
+            if self.capturing {
+                self.cancel_capture();
+            }
+            self.settings_open = false;
+        }
+    }
+}
+
+enum Action {
+    Play,
+    Reveal,
+    Export,
+    Delete,
+}
+
+fn clip_card(ui: &mut egui::Ui, clip: &Clip, tex: Option<&egui::TextureHandle>, w: f32) -> Option<Action> {
+    let mut action = None;
+    let thumb_size = Vec2::new(w, w * 9.0 / 16.0);
+    let hovered = ui.rect_contains_pointer(ui.max_rect());
+    egui::Frame::new()
+        .fill(if hovered { CARD_HOVER } else { CARD })
+        .corner_radius(10)
+        .show(ui, |ui| {
+            ui.set_width(w);
+            // Miniatura: clique assiste.
+            let (rect, resp) = ui.allocate_exact_size(thumb_size, egui::Sense::click());
+            let radius = CornerRadius { nw: 10, ne: 10, sw: 0, se: 0 };
+            match tex {
+                Some(t) => {
+                    egui::Image::new((t.id(), thumb_size))
+                        .corner_radius(radius)
+                        .paint_at(ui, rect);
+                }
+                None => {
+                    ui.painter().rect_filled(rect, radius, Color32::from_gray(38));
+                }
+            }
+            let painter = ui.painter();
+            if resp.hovered() || tex.is_none() {
+                if resp.hovered() {
+                    painter.rect_filled(rect, radius, Color32::from_black_alpha(90));
+                }
+                painter.circle(rect.center(), 22.0, Color32::from_black_alpha(150), Stroke::new(2.0, Color32::WHITE));
+                painter.text(
+                    rect.center() + Vec2::new(2.0, 0.0),
+                    egui::Align2::CENTER_CENTER,
+                    "▶",
+                    egui::FontId::proportional(20.0),
+                    Color32::WHITE,
+                );
+            }
+            // Tamanho no canto da miniatura.
+            let badge = format!("{:.1} MB", clip.size_mb);
+            let galley = painter.layout_no_wrap(badge, egui::FontId::proportional(12.0), Color32::WHITE);
+            let pos = rect.right_bottom() - galley.size() - Vec2::new(10.0, 8.0);
+            painter.rect_filled(
+                egui::Rect::from_min_size(pos - Vec2::new(5.0, 2.0), galley.size() + Vec2::new(10.0, 4.0)),
+                4.0,
+                Color32::from_black_alpha(170),
+            );
+            painter.galley(pos, galley, Color32::WHITE);
+            if resp.on_hover_text(t().watch).clicked() {
+                action = Some(Action::Play);
+            }
+
+            // Embaixo da miniatura: nome, data e hora, e os botões.
+            egui::Frame::new().inner_margin(egui::Margin::symmetric(10, 8)).show(ui, |ui| {
+                let stem = clip.name.trim_end_matches(".mp4");
+                ui.add(egui::Label::new(RichText::new(stem).strong()).truncate());
+                ui.label(RichText::new(&clip.when).weak());
+                ui.add_space(4.0);
+                let gap = 4.0;
+                let bw = (ui.available_width() - gap * 2.0) / 3.0;
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = gap;
+                    let mut btn = |ui: &mut egui::Ui, text: RichText, tip: &str, a: Action| {
+                        let b = egui::Button::new(text).min_size(Vec2::new(bw, 26.0));
+                        if ui.add(b).on_hover_text(tip).clicked() {
+                            action = Some(a);
+                        }
+                    };
+                    btn(ui, t().folder.into(), t().folder_tip, Action::Reveal);
+                    btn(ui, t().export.into(), t().export_tip, Action::Export);
+                    btn(ui, RichText::new(t().delete).color(ACCENT), t().delete_tip, Action::Delete);
+                });
+            });
+        });
+    action
+}
+
+fn section(ui: &mut egui::Ui, title: &str, body: impl FnOnce(&mut egui::Ui)) {
+    ui.add_space(6.0);
+    ui.label(RichText::new(title).strong().color(ACCENT));
+    egui::Frame::new()
+        .fill(CARD)
+        .corner_radius(8)
+        .inner_margin(10)
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            body(ui);
+        });
+}
+
+fn hint(ui: &mut egui::Ui, text: &str) {
+    ui.label(RichText::new(text).weak().small());
+}
+
+fn key_chip(ui: &mut egui::Ui, key: &str) {
+    egui::Frame::new()
+        .fill(Color32::from_gray(50))
+        .stroke(Stroke::new(1.0, Color32::from_gray(80)))
+        .corner_radius(5)
+        .inner_margin(egui::Margin::symmetric(8, 3))
+        .show(ui, |ui| {
+            ui.label(RichText::new(key).monospace().strong());
+        });
 }
 
 impl eframe::App for ClipApp {
@@ -376,6 +645,7 @@ impl eframe::App for ClipApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
         }
+        self.handle_capture(ctx);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -385,19 +655,19 @@ impl eframe::App for ClipApp {
             self.scan();
         }
 
-        egui::CentralPanel::default().show(ui, |ui| {
-            self.header(ui);
-            ui.add_space(8.0);
-            self.explanation(ui);
-            ui.add_space(8.0);
-            self.settings(ui);
-            ui.separator();
-            self.history(ui);
-        });
+        egui::Panel::top("top")
+            .frame(egui::Frame::new().fill(BG).inner_margin(egui::Margin::symmetric(18, 14)))
+            .show(ui, |ui| self.top_bar(ui));
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new().fill(BG).inner_margin(egui::Margin { left: 18, right: 14, top: 4, bottom: 8 }))
+            .show(ui, |ui| self.clips_grid(ui));
+
+        let ctx = ui.ctx().clone();
+        self.settings_modal(&ctx);
+        self.delete_modal(&ctx);
 
         // Atualiza a bolinha e o status mesmo sem mexer o mouse.
-        ui.ctx()
-            .request_repaint_after(std::time::Duration::from_millis(250));
+        ctx.request_repaint_after(Duration::from_millis(250));
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {

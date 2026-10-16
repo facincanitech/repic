@@ -1,6 +1,6 @@
 [package]
 name = "repic"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "Clipador leve: aperta F8 e salva os ultimos segundos da tela"
 
@@ -13,7 +13,6 @@ chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 cpal = { version = "0.18.2", default-features = false }
 dirs = "7.0.0"
 eframe = { version = "0.36.2", default-features = false, features = ["default_fonts", "glow"] }
-global-hotkey = { version = "0.8.0", default-features = false }
 hound = { version = "3.5.1", default-features = false }
 image = { version = "0.25.10", default-features = false, features = ["jpeg"] }
 serde = { version = "1.0.229", features = ["derive"] }
@@ -22,7 +21,21 @@ tray-icon = "0.26.1"
 
 [target.'cfg(windows)'.dependencies]
 raw-window-handle = "0.6"
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Diagnostics_Debug", "Win32_System_Threading", "Win32_System_JobObjects", "Win32_UI_WindowsAndMessaging", "Win32_Security"] }
+rfd = { version = "0.17.2", default-features = false }
+windows = { version = "0.62.2", features = ["Win32_Graphics_Dxgi", "Win32_Graphics_Dxgi_Common", "Win32_Graphics_Gdi"] }
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Globalization",
+    "Win32_Graphics_Gdi",
+    "Win32_Security",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_JobObjects",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Registry",
+    "Win32_System_Threading",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+] }
 
 [profile.release]
 opt-level = "z"
