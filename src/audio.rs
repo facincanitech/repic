@@ -339,6 +339,34 @@ mod tests {
         assert!(a.samples[15..20].iter().all(|&s| s == 2.0)); // 2.0s..2.5s
     }
 
+    /// Captura o som do PC de verdade por 4s. Rodar com algo tocando:
+    /// `cargo test live_loopback -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn live_loopback() {
+        let ring = AudioRing::new(true, 30);
+        start(ring.clone(), Source::Loopback);
+        std::thread::sleep(Duration::from_secs(4));
+        {
+            let inner = ring.inner.lock().unwrap();
+            let runs: std::collections::HashSet<_> = inner.chunks.iter().map(|c| c.anchor).collect();
+            let frames: usize = inner.chunks.iter().map(|c| c.data.len()).sum::<usize>() / inner.channels as usize;
+            println!(
+                "formato {} Hz x{} | pedaços {} | trechos {} | {:.2}s de som",
+                inner.sample_rate,
+                inner.channels,
+                inner.chunks.len(),
+                runs.len(),
+                frames as f64 / inner.sample_rate as f64
+            );
+        }
+        let now = SystemTime::now();
+        let a = ring.render(now - Duration::from_secs(3), Duration::from_secs(3));
+        let peak = a.samples.iter().fold(0f32, |m, s| m.max(s.abs()));
+        let zeros = a.samples.iter().filter(|s| **s == 0.0).count();
+        println!("render 3s: pico {peak:.3} | zeros {:.1}%", 100.0 * zeros as f64 / a.samples.len() as f64);
+    }
+
     #[test]
     fn render_without_any_sound_is_silence_not_nothing() {
         let ring = AudioRing::new(true, 30);

@@ -23,6 +23,12 @@ use std::time::{Duration, Instant, SystemTime};
 
 const SEGMENT_SECS: u32 = 2;
 
+/// Quanto tempo depois da captura o quadro chega no arquivo (codificar +
+/// gravar). O fim do vídeo vem da hora do arquivo, então o áudio é recuado
+/// esse tanto pra ficar junto da imagem. Medido com pisca + bipe: sem isso
+/// o som ficava ~140 ms adiantado.
+const VIDEO_LATENCY: Duration = Duration::from_millis(140);
+
 const NVIDIA: u32 = 0x10de;
 const AMD: u32 = 0x1002;
 const INTEL: u32 = 0x8086;
@@ -414,9 +420,10 @@ pub fn trigger_save(shared: Arc<Shared>) {
     if shared.saving.swap(true, Ordering::SeqCst) {
         return; // já está salvando
     }
+    let pressed = SystemTime::now();
     std::thread::spawn(move || {
         shared.set_event(true, t().saving);
-        match save_clip(&shared) {
+        match save_clip(&shared, pressed) {
             Ok(path) => {
                 platform::beep_ok();
                 let name = path
@@ -534,15 +541,32 @@ fn mux_args(video: &str, wavs: &[String], out: &str) -> Vec<String> {
     a
 }
 
-fn save_clip(shared: &Shared) -> Result<PathBuf, String> {
+/// Quantos pedaços pegar pra cobrir `seconds` até o aperto, sabendo que o
+/// último pedaço termina `after_press` depois do aperto.
+fn segments_needed(seconds: u32, after_press: Duration) -> usize {
+    ((seconds as f64 + after_press.as_secs_f64()) / SEGMENT_SECS as f64).ceil() as usize
+}
+
+fn save_clip(shared: &Shared, pressed: SystemTime) -> Result<PathBuf, String> {
     let cfg = shared.config();
-    let segs = completed_segments(&shared.paths.buffer_dir);
+    // O pedaço que estava sendo gravado no aperto é justamente o momento que
+    // a pessoa quer: espera ele fechar (no máximo um pedaço e pouco).
+    let deadline = Instant::now() + Duration::from_millis(SEGMENT_SECS as u64 * 1000 + 1500);
+    let segs = loop {
+        let segs = completed_segments(&shared.paths.buffer_dir);
+        let covers_press = segs.last().is_some_and(|(_, end)| *end >= pressed);
+        if covers_press || Instant::now() >= deadline {
+            break segs;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    };
     if segs.is_empty() {
         return Err(t().buffer_empty.into());
     }
-    let wanted = cfg.seconds.div_ceil(SEGMENT_SECS) as usize;
+    let video_end = segs.last().unwrap().1;
+    let after_press = video_end.duration_since(pressed).unwrap_or_default();
+    let wanted = segments_needed(cfg.seconds, after_press);
     let take = &segs[segs.len().saturating_sub(wanted)..];
-    let video_end = take.last().unwrap().1;
 
     let work = &shared.paths.work_dir;
     clean_dir(work);
@@ -584,7 +608,7 @@ fn save_clip(shared: &Shared) -> Result<PathBuf, String> {
         probe_duration(shared, &video).unwrap_or((take.len() as u32 * SEGMENT_SECS) as f64);
     let duration = Duration::from_secs_f64(duration.max(0.1));
     let mut wavs = Vec::new();
-    if let Some(start) = video_end.checked_sub(duration) {
+    if let Some(start) = video_end.checked_sub(duration + VIDEO_LATENCY) {
         for (on, ring, name) in [
             (cfg.audio, &shared.audio, "pc.wav"),
             (cfg.mic, &shared.mic, "mic.wav"),
@@ -685,6 +709,15 @@ mod tests {
         assert!(a.contains(&"1:a".to_string()) && !a.iter().any(|x| x.contains("amix")));
         let a = mux_args("v.mp4", &[], "o.mp4");
         assert!(!a.contains(&"-c:a".to_string()));
+    }
+
+    #[test]
+    fn takes_enough_segments_to_cover_the_seconds_before_the_press() {
+        // Último pedaço fechou junto com o aperto: 30s = 15 pedaços.
+        assert_eq!(segments_needed(30, Duration::ZERO), 15);
+        // Fechou 1,4s depois do aperto: precisa de mais um pra não perder o começo.
+        assert_eq!(segments_needed(30, Duration::from_millis(1400)), 16);
+        assert_eq!(segments_needed(15, Duration::from_millis(500)), 8);
     }
 
     #[test]
