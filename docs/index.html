@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RePic — aperta F8, vira clipe</title>
+<meta name="description" content="Clipador leve pra Windows: aperta F8 e os últimos 30 segundos da tela viram um clipe. Grátis, sem conta, sem upload.">
+<meta property="og:title" content="RePic — aperta F8, vira clipe">
+<meta property="og:description" content="Clipador leve pra Windows. Grátis, sem conta, sem upload.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23f5f5f5'/%3E%3Ccircle cx='16' cy='16' r='12.5' fill='%2318181c'/%3E%3Ccircle cx='16' cy='16' r='9' fill='%23eb4040'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #111115;
+    --bg-2: #18181d;
+    --card: #1d1d23;
+    --card-2: #25252d;
+    --line: #2c2c35;
+    --text: #f2f2f5;
+    --muted: #9a9aa6;
+    --accent: #eb4040;
+    --accent-2: #ff5a5a;
+    --ok: #6ec878;
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.6 Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+
+  /* Topo */
+  header { position: sticky; top: 0; z-index: 10; background: rgba(17,17,21,.85); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+  header .wrap { display: flex; align-items: center; gap: 16px; height: 60px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 20px; text-decoration: none; }
+  .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px #18181c, 0 0 0 5px #f5f5f5; }
+  .rec { animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .45; } }
+  nav { margin-left: auto; display: flex; gap: 18px; align-items: center; font-size: 14px; color: var(--muted); }
+  nav a { text-decoration: none; }
+  nav a:hover { color: var(--text); }
+  .langs { display: flex; gap: 2px; background: var(--card); border-radius: 8px; padding: 2px; }
+  .langs button { background: none; border: 0; color: var(--muted); font: inherit; font-size: 12px; font-weight: 600; padding: 4px 8px; border-radius: 6px; cursor: pointer; }
+  .langs button.on { background: var(--card-2); color: var(--text); }
+
+  /* Hero */
+  .hero { padding: 72px 0 40px; text-align: center; }
+  .hero h1 { font-size: clamp(36px, 7vw, 64px); line-height: 1.05; margin: 0 0 18px; letter-spacing: -0.03em; font-weight: 800; }
+  .hero h1 .key { display: inline-block; font-size: .78em; padding: 0 .28em; margin: 0 .05em; border-radius: .16em; background: var(--card-2); border: 1px solid #3a3a45; border-bottom-width: 4px; vertical-align: .06em; }
+  .hero p.lead { font-size: clamp(17px, 2.4vw, 20px); color: var(--muted); max-width: 640px; margin: 0 auto 30px; }
+  .cta { display: inline-flex; align-items: center; gap: 10px; background: var(--accent); color: #fff; text-decoration: none; font-weight: 700; font-size: 18px; padding: 15px 28px; border-radius: 12px; box-shadow: 0 10px 30px rgba(235,64,64,.25); transition: transform .12s, background .12s; }
+  .cta:hover { background: var(--accent-2); transform: translateY(-1px); }
+  .cta svg { width: 20px; height: 20px; }
+  .meta { margin-top: 14px; font-size: 14px; color: var(--muted); }
+  .meta span + span::before { content: "·"; margin: 0 8px; opacity: .6; }
+
+  /* Janela desenhada */
+  .shot { margin: 48px auto 0; max-width: 880px; min-width: 0; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: var(--bg); box-shadow: 0 30px 80px rgba(0,0,0,.55); text-align: left; }
+  .titlebar { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; background: #1b1b20; font-size: 12px; color: #c9c9d2; }
+  .titlebar .ctrls { margin-left: auto; display: flex; gap: 18px; color: #8d8d98; font-size: 13px; }
+  .app { padding: 16px 18px 18px; }
+  .app-top { display: flex; align-items: center; gap: 10px; }
+  .app-top h3 { margin: 0; font-size: 22px; font-weight: 600; }
+  .app-top .clip { margin-left: auto; background: var(--accent); color: #fff; font-size: 13px; font-weight: 600; padding: 7px 12px; border-radius: 6px; white-space: nowrap; }
+  .app-top .gear { width: 32px; height: 32px; border-radius: 6px; background: #2a2a31; display: grid; place-items: center; color: #aaa; font-size: 16px; }
+  .status, .saved { font-size: 12px; margin: 4px 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .status { color: var(--muted); }
+  .saved { color: var(--ok); margin-top: 0; }
+  .app-top h3 { min-width: 0; }
+  .sep { height: 1px; background: var(--line); margin: 12px -18px 12px; }
+  .row { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+  .row b { font-weight: 600; }
+  .row small { color: var(--muted); }
+  .row .open { margin-left: auto; font-size: 12px; background: #2a2a31; padding: 4px 10px; border-radius: 5px; color: #ccc; }
+  .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .card { background: var(--card); border-radius: 10px; overflow: hidden; min-width: 0; }
+  .thumb { aspect-ratio: 16/9; position: relative; overflow: hidden; }
+  .thumb .mb { position: absolute; right: 8px; bottom: 6px; font-size: 10px; background: rgba(0,0,0,.65); padding: 1px 5px; border-radius: 4px; }
+  .t1 { background: radial-gradient(circle at 70% 40%, #ffb347 0 8%, transparent 9%), linear-gradient(160deg, #3a6186 0%, #89253e 100%); }
+  .t2 { background: linear-gradient(0deg, #2d4a22 0 35%, transparent 35%), radial-gradient(circle at 30% 30%, #f6d365 0 10%, transparent 11%), linear-gradient(180deg, #6dd5ed, #2193b0); }
+  .t3 { background: repeating-linear-gradient(90deg, #1f1f2e 0 18px, #262640 18px 36px), #1f1f2e; }
+  .t3::after { content: ""; position: absolute; inset: 30% 38%; background: var(--accent); border-radius: 50%; filter: blur(6px); opacity: .8; }
+  .info { padding: 8px 10px 10px; }
+  .info b { display: block; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .info small { display: block; font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+  .btns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+  .btns span { font-size: 10px; text-align: center; background: #2a2a31; padding: 4px 0; border-radius: 4px; color: #ccc; }
+  .btns span.del { color: var(--accent); }
+
+  /* Seções */
+  section { padding: 72px 0; }
+  h2 { font-size: clamp(26px, 4vw, 36px); letter-spacing: -0.02em; margin: 0 0 10px; text-align: center; }
+  .sub { text-align: center; color: var(--muted); margin: 0 auto 40px; max-width: 560px; }
+  .feats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .feat { background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px; }
+  .feat .ic { width: 38px; height: 38px; border-radius: 10px; background: rgba(235,64,64,.12); color: var(--accent); display: grid; place-items: center; margin-bottom: 14px; }
+  .feat .ic svg { width: 20px; height: 20px; }
+  .feat h4 { margin: 0 0 6px; font-size: 17px; }
+  .feat p { margin: 0; color: var(--muted); font-size: 15px; }
+
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; counter-reset: s; }
+  .step { position: relative; padding: 22px 22px 22px 70px; background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius); }
+  .step::before { counter-increment: s; content: counter(s); position: absolute; left: 20px; top: 20px; width: 34px; height: 34px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 800; display: grid; place-items: center; }
+  .step h4 { margin: 0 0 4px; font-size: 17px; }
+  .step p { margin: 0; color: var(--muted); font-size: 15px; }
+
+  .faq { max-width: 760px; margin: 0 auto; }
+  details { background: var(--bg-2); border: 1px solid var(--line); border-radius: 12px; padding: 0 20px; margin-bottom: 10px; }
+  summary { cursor: pointer; padding: 16px 0; font-weight: 600; list-style: none; display: flex; justify-content: space-between; gap: 12px; }
+  summary::-webkit-details-marker { display: none; }
+  summary::after { content: "+"; color: var(--accent); font-size: 20px; line-height: 1; }
+  details[open] summary::after { content: "–"; }
+  details p { margin: 0 0 16px; color: var(--muted); }
+
+  .final { text-align: center; padding: 80px 0; background: radial-gradient(600px 220px at 50% 100%, rgba(235,64,64,.14), transparent); }
+
+  footer { border-top: 1px solid var(--line); padding: 28px 0 40px; color: var(--muted); font-size: 14px; }
+  footer .wrap { display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: center; }
+  footer .right { margin-left: auto; }
+  footer a { text-decoration: none; color: var(--text); font-weight: 600; }
+  footer a:hover { color: var(--accent); }
+  footer .gpl { width: 100%; font-size: 12px; opacity: .8; }
+
+  @media (max-width: 820px) {
+    .feats, .steps { grid-template-columns: 1fr; }
+    .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid .card:nth-child(3) { display: none; }
+    nav .hide-sm { display: none; }
+  }
+  @media (max-width: 480px) {
+    .grid { grid-template-columns: minmax(0, 1fr); }
+    .grid .card:nth-child(2) { display: none; }
+    .app-top .clip { font-size: 11px; padding: 6px 8px; }
+    .status { display: none; }
+    footer .right { margin-left: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) { .rec { animation: none; } html { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <a class="brand" href="#"><span class="dot rec"></span>RePic</a>
+    <nav>
+      <a class="hide-sm" href="#recursos" data-t="nav_features">Recursos</a>
+      <a class="hide-sm" href="#duvidas" data-t="nav_faq">Dúvidas</a>
+      <a href="https://github.com/facincanitech/repic">GitHub</a>
+      <div class="langs" role="group" aria-label="Idioma">
+        <button data-lang="pt">PT</button><button data-lang="en">EN</button><button data-lang="es">ES</button>
+      </div>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="hero wrap">
+    <h1><span data-t="h1_a">Aperta</span> <span class="key">F8</span>.<br><span data-t="h1_b">Vira clipe.</span></h1>
+    <p class="lead" data-t="lead">O RePic fica gravando a tela em loop. Aconteceu algo épico? Aperta o atalho e os últimos 30 segundos viram um vídeo. Sem conta, sem upload, sem pesar no jogo.</p>
+    <a class="cta dl" href="https://github.com/facincanitech/repic/releases/latest/download/RePic-windows.zip">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14"/></svg>
+      <span data-t="cta">Baixar pra Windows</span>
+    </a>
+    <div class="meta"><span data-t="free">Grátis</span><span>Windows 10 / 11</span><span class="ver">.zip</span></div>
+
+    <div class="shot" aria-hidden="true">
+      <div class="titlebar"><span class="dot" style="width:10px;height:10px;box-shadow:0 0 0 2px #18181c,0 0 0 3px #f5f5f5"></span>RePic<div class="ctrls"><span>—</span><span>☐</span><span>✕</span></div></div>
+      <div class="app">
+        <div class="app-top"><span class="dot rec"></span><h3>RePic</h3><span class="clip" data-t="m_clip">Clipar agora · F8</span><span class="gear">⚙</span></div>
+        <div class="status" data-t="m_status">Gravando em loop · Monitor 1 · 2560×1080 (principal) · NVIDIA (NVENC) · 60 fps · últimos 30s</div>
+        <div class="saved" data-t="m_saved">Clipe salvo: RePic_2026-10-16_21-42-07.mp4</div>
+        <div class="sep"></div>
+        <div class="row"><b data-t="m_recent">Últimos clipes</b><small>3</small><span class="open" data-t="m_open">Abrir pasta</span></div>
+        <div class="grid">
+          <div class="card"><div class="thumb t1"><span class="mb">38.2 MB</span></div><div class="info"><b>RePic_2026-10-16_21-42-07</b><small>16/10/2026 · 21:42</small><div class="btns"><span data-t="m_folder">Pasta</span><span data-t="m_export">Exportar</span><span class="del" data-t="m_delete">Excluir</span></div></div></div>
+          <div class="card"><div class="thumb t2"><span class="mb">41.0 MB</span></div><div class="info"><b>RePic_2026-10-16_20-17-55</b><small>16/10/2026 · 20:17</small><div class="btns"><span data-t="m_folder">Pasta</span><span data-t="m_export">Exportar</span><span class="del" data-t="m_delete">Excluir</span></div></div></div>
+          <div class="card"><div class="thumb t3"><span class="mb">29.7 MB</span></div><div class="info"><b>RePic_2026-10-15_23-03-12</b><small>15/10/2026 · 23:03</small><div class="btns"><span data-t="m_folder">Pasta</span><span data-t="m_export">Exportar</span><span class="del" data-t="m_delete">Excluir</span></div></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <section id="recursos">
+    <div class="wrap">
+      <h2 data-t="f_title">Leve de verdade</h2>
+      <p class="sub" data-t="f_sub">Feito pra rodar junto com o jogo sem você nem lembrar que está aberto.</p>
+      <div class="feats">
+        <div class="feat"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/></svg></div><h4 data-t="f1_t">Usa a placa de vídeo</h4><p data-t="f1_p">NVIDIA, AMD ou Intel: grava com o encoder da placa, quase sem custo pro jogo.</p></div>
+        <div class="feat"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg></div><h4 data-t="f2_t">Salvar é instantâneo</h4><p data-t="f2_p">O vídeo não é reprocessado: o clipe fica pronto na hora, com um "plim".</p></div>
+        <div class="feat"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h4 data-t="f3_t">Nada sai do seu PC</h4><p data-t="f3_p">Sem login, sem conta, sem nuvem, sem propaganda. Os clipes ficam na sua pasta Vídeos.</p></div>
+        <div class="feat"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg></div><h4 data-t="f4_t">Qualquer tecla</h4><p data-t="f4_p">Escolha o atalho que quiser, sozinho ou com Ctrl/Alt/Shift. A tecla continua funcionando no jogo.</p></div>
+        <div class="feat"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/></svg></div><h4 data-t="f5_t">Som do PC + microfone</h4><p data-t="f5_p">Grava o que sai nos fones e, se quiser, o seu microfone, tudo sincronizado com o vídeo.</p></div>
+        <div class="feat"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div><h4 data-t="f6_t">Qualquer monitor</h4><p data-t="f6_p">O principal do Windows ou outro que você escolher. Funciona em notebook com duas placas.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section style="padding-top:0">
+    <div class="wrap">
+      <h2 data-t="s_title">Em 3 passos</h2>
+      <p class="sub" data-t="s_sub">Não tem instalador. É baixar e abrir.</p>
+      <div class="steps">
+        <div class="step"><h4 data-t="s1_t">Baixe e extraia</h4><p data-t="s1_p">Deixe o RePic.exe, o ffmpeg.exe e o ffprobe.exe juntos na mesma pasta.</p></div>
+        <div class="step"><h4 data-t="s2_t">Abra e jogue</h4><p data-t="s2_p">Ele fica na bandeja, perto do relógio, gravando em loop. Pode até iniciar com o Windows.</p></div>
+        <div class="step"><h4 data-t="s3_t">Aperte F8</h4><p data-t="s3_p">Os últimos 30 segundos (ou até 2 minutos) viram um MP4 na pasta Vídeos\RePic.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="duvidas" style="padding-top:0">
+    <div class="wrap">
+      <h2 data-t="q_title">Dúvidas</h2>
+      <p class="sub"></p>
+      <div class="faq">
+        <details><summary data-t="q1">O Windows disse "O Windows protegeu o computador"</summary><p data-t="a1">Isso aparece com programas novos que ainda não são assinados digitalmente. Clique em "Mais informações" e depois em "Executar assim mesmo". O código é aberto no GitHub.</p></details>
+        <details><summary data-t="q2">O clipe saiu com a tela preta</summary><p data-t="a2">Alguns jogos em tela cheia exclusiva bloqueiam a captura. Use o modo "janela sem bordas" (borderless) nas configurações de vídeo do jogo.</p></details>
+        <details><summary data-t="q3">O atalho não funciona dentro de um jogo</summary><p data-t="a3">Se o jogo roda como administrador, o Windows não deixa outros programas verem as teclas. Abra o RePic como administrador também.</p></details>
+        <details><summary data-t="q4">Pesa no FPS?</summary><p data-t="a4">Quase nada: a gravação usa o chip de vídeo dedicado da placa (NVENC, AMF ou QuickSync), que é separado do que roda o jogo.</p></details>
+        <details><summary data-t="q5">É grátis mesmo?</summary><p data-t="a5">Sim. Sem versão paga, sem marca d'água, sem propaganda.</p></details>
+      </div>
+    </div>
+  </section>
+
+  <div class="final">
+    <div class="wrap">
+      <h2 data-t="final">Próxima jogada épica? Já tá gravando.</h2>
+      <p class="sub" style="margin-bottom:28px"></p>
+      <a class="cta dl" href="https://github.com/facincanitech/repic/releases/latest/download/RePic-windows.zip">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14"/></svg>
+        <span data-t="cta">Baixar pra Windows</span>
+      </a>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>RePic · <span data-t="foot">feito pra meme. Quer usar, usa.</span></span>
+    <span class="right">powered by <a href="https://facincanitech.github.io">FacincaniTech</a></span>
+    <span class="gpl" data-t="gpl">O download inclui o FFmpeg (ffmpeg.org), distribuído sob a licença GPL v3.</span>
+  </div>
+</footer>
+
+<script>
+const T = {
+  en: {
+    nav_features: "Features", nav_faq: "FAQ",
+    h1_a: "Press", h1_b: "Get a clip.",
+    lead: "RePic keeps recording your screen in a loop. Something epic happened? Hit the shortcut and the last 30 seconds become a video. No account, no upload, no FPS hit.",
+    cta: "Download for Windows", free: "Free",
+    m_clip: "Clip now · F8", m_status: "Recording in a loop · Monitor 1 · 2560×1080 (main) · NVIDIA (NVENC) · 60 fps · last 30s",
+    m_saved: "Clip saved: RePic_2026-10-16_21-42-07.mp4", m_recent: "Recent clips", m_open: "Open folder",
+    m_folder: "Folder", m_export: "Export", m_delete: "Delete",
+    f_title: "Actually lightweight", f_sub: "Made to run alongside your game without you even noticing it's open.",
+    f1_t: "Uses your GPU", f1_p: "NVIDIA, AMD or Intel: records with the graphics card's encoder, almost free for your game.",
+    f2_t: "Saving is instant", f2_p: "The video isn't re-encoded: the clip is ready right away, with a little chime.",
+    f3_t: "Nothing leaves your PC", f3_p: "No login, no account, no cloud, no ads. Clips stay in your Videos folder.",
+    f4_t: "Any key", f4_p: "Pick any shortcut, alone or with Ctrl/Alt/Shift. The key still works in your game.",
+    f5_t: "PC sound + microphone", f5_p: "Records what plays on your headphones and, if you want, your mic, in sync with the video.",
+    f6_t: "Any monitor", f6_p: "The Windows main display or another one you pick. Works on laptops with two GPUs.",
+    s_title: "3 steps", s_sub: "No installer. Just download and open.",
+    s1_t: "Download and extract", s1_p: "Keep RePic.exe, ffmpeg.exe and ffprobe.exe together in the same folder.",
+    s2_t: "Open it and play", s2_p: "It sits in the tray next to the clock, recording in a loop. It can even start with Windows.",
+    s3_t: "Press F8", s3_p: "The last 30 seconds (up to 2 minutes) become an MP4 in Videos\\RePic.",
+    q_title: "FAQ",
+    q1: "Windows said \"Windows protected your PC\"", a1: "That shows up for new programs that aren't digitally signed yet. Click \"More info\" and then \"Run anyway\". The code is open on GitHub.",
+    q2: "My clip came out black", a2: "Some games in exclusive fullscreen block capture. Use \"borderless window\" mode in the game's video settings.",
+    q3: "The shortcut doesn't work inside a game", a3: "If the game runs as administrator, Windows won't let other programs see your keys. Run RePic as administrator too.",
+    q4: "Does it hurt FPS?", a4: "Barely: recording uses the GPU's dedicated video chip (NVENC, AMF or QuickSync), separate from what runs your game.",
+    q5: "Is it really free?", a5: "Yes. No paid version, no watermark, no ads.",
+    final: "Next epic play? It's already recording.",
+    foot: "made for memes. Want it? Use it.", gpl: "The download includes FFmpeg (ffmpeg.org), licensed under GPL v3."
+  },
+  es: {
+    nav_features: "Funciones", nav_faq: "Preguntas",
+    h1_a: "Pulsa", h1_b: "Ya es clip.",
+    lead: "RePic graba tu pantalla en bucle. ¿Pasó algo épico? Pulsa el atajo y los últimos 30 segundos se convierten en un video. Sin cuenta, sin subir nada, sin bajar los FPS.",
+    cta: "Descargar para Windows", free: "Gratis",
+    m_clip: "Clipear ahora · F8", m_status: "Grabando en bucle · Monitor 1 · 2560×1080 (principal) · NVIDIA (NVENC) · 60 fps · últimos 30s",
+    m_saved: "Clip guardado: RePic_2026-10-16_21-42-07.mp4", m_recent: "Clips recientes", m_open: "Abrir carpeta",
+    m_folder: "Carpeta", m_export: "Exportar", m_delete: "Eliminar",
+    f_title: "Ligero de verdad", f_sub: "Hecho para correr junto al juego sin que te acuerdes de que está abierto.",
+    f1_t: "Usa tu tarjeta gráfica", f1_p: "NVIDIA, AMD o Intel: graba con el encoder de la tarjeta, casi sin costo para el juego.",
+    f2_t: "Guardar es instantáneo", f2_p: "El video no se recodifica: el clip queda listo al momento, con un sonidito.",
+    f3_t: "Nada sale de tu PC", f3_p: "Sin login, sin cuenta, sin nube, sin anuncios. Los clips quedan en tu carpeta Videos.",
+    f4_t: "Cualquier tecla", f4_p: "Elige el atajo que quieras, solo o con Ctrl/Alt/Shift. La tecla sigue funcionando en el juego.",
+    f5_t: "Sonido del PC + micrófono", f5_p: "Graba lo que suena en tus auriculares y, si quieres, tu micrófono, sincronizado con el video.",
+    f6_t: "Cualquier monitor", f6_p: "El principal de Windows u otro que elijas. Funciona en portátiles con dos gráficas.",
+    s_title: "En 3 pasos", s_sub: "No tiene instalador. Descargar y abrir.",
+    s1_t: "Descarga y extrae", s1_p: "Deja RePic.exe, ffmpeg.exe y ffprobe.exe juntos en la misma carpeta.",
+    s2_t: "Ábrelo y juega", s2_p: "Se queda en la bandeja junto al reloj, grabando en bucle. Puede iniciar con Windows.",
+    s3_t: "Pulsa F8", s3_p: "Los últimos 30 segundos (hasta 2 minutos) se convierten en un MP4 en Videos\\RePic.",
+    q_title: "Preguntas",
+    q1: "Windows dijo \"Windows protegió tu PC\"", a1: "Aparece con programas nuevos que aún no están firmados digitalmente. Haz clic en \"Más información\" y luego en \"Ejecutar de todas formas\". El código es abierto en GitHub.",
+    q2: "El clip salió negro", a2: "Algunos juegos en pantalla completa exclusiva bloquean la captura. Usa el modo \"ventana sin bordes\" en la configuración de video del juego.",
+    q3: "El atajo no funciona dentro de un juego", a3: "Si el juego corre como administrador, Windows no deja que otros programas vean las teclas. Abre RePic como administrador también.",
+    q4: "¿Baja los FPS?", a4: "Casi nada: la grabación usa el chip de video dedicado de la tarjeta (NVENC, AMF o QuickSync), separado del que corre el juego.",
+    q5: "¿Es gratis de verdad?", a5: "Sí. Sin versión paga, sin marca de agua, sin anuncios.",
+    final: "¿La próxima jugada épica? Ya se está grabando.",
+    foot: "hecho para memes. ¿Lo quieres? Úsalo.", gpl: "La descarga incluye FFmpeg (ffmpeg.org), distribuido bajo la licencia GPL v3."
+  }
+};
+// Guarda o texto original (português) de cada elemento.
+const els = [...document.querySelectorAll("[data-t]")];
+els.forEach(e => { T.pt = T.pt || {}; T.pt[e.dataset.t] = e.textContent; });
+
+function setLang(l) {
+  const d = T[l] || T.pt;
+  els.forEach(e => { if (d[e.dataset.t] != null) e.textContent = d[e.dataset.t]; });
+  document.documentElement.lang = { pt: "pt-BR", en: "en", es: "es" }[l] || "pt-BR";
+  document.querySelectorAll(".langs button").forEach(b => b.classList.toggle("on", b.dataset.lang === l));
+  try { localStorage.setItem("repic-lang", l); } catch (_) {}
+}
+document.querySelectorAll(".langs button").forEach(b => b.onclick = () => setLang(b.dataset.lang));
+
+let saved = null;
+try { saved = localStorage.getItem("repic-lang"); } catch (_) {}
+const nav = (navigator.language || "pt").slice(0, 2).toLowerCase();
+setLang(saved || (nav === "pt" || nav === "es" ? nav : "en"));
+
+// Mostra a versão e o tamanho do download, se o GitHub responder.
+fetch("https://api.github.com/repos/facincanitech/repic/releases/latest")
+  .then(r => r.ok ? r.json() : null)
+  .then(rel => {
+    if (!rel) return;
+    const zip = (rel.assets || []).find(a => a.name.endsWith(".zip"));
+    const ver = document.querySelector(".ver");
+    ver.textContent = rel.tag_name + (zip ? " · " + Math.round(zip.size / 1048576) + " MB" : "");
+  })
+  .catch(() => {});
+</script>
+</body>
+</html>
