@@ -59,20 +59,59 @@ fn wait_for_save(shared: &Shared) {
     }
 }
 
+/// Fecha o RePic de vez (sem deixar clipe pela metade nem ffmpeg aberto).
+pub fn quit(shared: &Shared) -> ! {
+    wait_for_save(shared);
+    shared.send(RecCmd::Quit);
+    // Dá tempo do ffmpeg fechar e limpar o buffer.
+    std::thread::sleep(Duration::from_millis(400));
+    std::process::exit(0);
+}
+
 fn main() -> eframe::Result {
-    if platform::already_running() {
-        // Abriu o .exe de novo: só traz a janela que já está rodando.
-        platform::focus_other_instance();
+    let has_arg = |name: &str| std::env::args().any(|a| a == name);
+    // Instalador atualizando/desinstalando: pede pro RePic aberto fechar
+    // (ele pode ser admin, aí o taskkill do instalador não consegue).
+    if has_arg("--quit") {
+        if platform::signal_other(platform::Signal::Quit) {
+            let deadline = Instant::now() + Duration::from_secs(20);
+            while platform::already_running() && Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(200));
+            }
+        }
         return Ok(());
     }
+    // Reaberto como administrador: o RePic de antes ainda está fechando.
+    let restarting = has_arg("--restart");
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while platform::already_running() {
+        if !restarting || Instant::now() > deadline {
+            // Abriu o .exe de novo: só traz a janela que já está rodando.
+            platform::focus_other_instance();
+            return Ok(());
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
     // Aberto pelo "Iniciar com o Windows": começa escondido na bandeja.
-    let start_hidden = std::env::args().any(|a| a == "--tray");
+    let start_hidden = has_arg("--tray");
+    let cfg = config::Config::load();
+
+    if cfg.admin && !platform::is_admin() {
+        let args = if start_hidden { "--restart --tray" } else { "--restart" };
+        if platform::relaunch_as_admin(args) {
+            return Ok(());
+        }
+        platform::log("rodar como administrador: o Windows não confirmou");
+    }
     // Se o .exe mudou de pasta, atualiza o caminho do iniciar com o Windows.
-    if platform::autostart_enabled() {
-        let _ = platform::set_autostart(true);
+    // (Admin recusado agora não desfaz a tarefa de admin.)
+    if platform::autostart_enabled()
+        && cfg.admin == platform::is_admin()
+        && let Err(e) = platform::set_autostart(true, cfg.admin)
+    {
+        platform::log(&format!("iniciar com o Windows: {e}"));
     }
 
-    let cfg = config::Config::load();
     let shared = Shared::new(cfg.clone());
     audio::start(shared.audio.clone(), audio::Source::Loopback);
     audio::start(shared.mic.clone(), audio::Source::Mic);
@@ -84,6 +123,9 @@ fn main() -> eframe::Result {
             .with_inner_size([980.0, 660.0])
             .with_min_inner_size([560.0, 440.0])
             .with_visible(!start_hidden)
+            // Escondido: nem pega o foco no instante em que o eframe mostra a
+            // janela (o jogo continua na frente).
+            .with_active(!start_hidden)
             .with_icon(egui::IconData {
                 rgba: icon_rgba(64),
                 width: 64,
@@ -115,6 +157,12 @@ fn main() -> eframe::Result {
                 }
             }
 
+            let s = shared.clone();
+            platform::listen_signals(move |sig| match sig {
+                platform::Signal::Show => s.request_show(),
+                platform::Signal::Quit => quit(&s),
+            });
+
             // Atalho global (funciona com o jogo em foco e com a janela fechada).
             let s = shared.clone();
             hotkey::start(cfg.shortcut, move |ev| match ev {
@@ -122,6 +170,10 @@ fn main() -> eframe::Result {
                 hotkey::Event::Captured(c) => {
                     *s.captured.lock().unwrap() = Some(c);
                     s.repaint();
+                }
+                hotkey::Event::AdminGame => {
+                    recorder::notify(&s, lang::t().toast_admin_game, platform::Toast::Error);
+                    s.set_event(false, lang::t().admin_game);
                 }
             });
 
@@ -160,11 +212,7 @@ fn main() -> eframe::Result {
                 } else if ev.id == save_id {
                     recorder::trigger_save(s.clone());
                 } else if ev.id == quit_id {
-                    wait_for_save(&s);
-                    s.send(RecCmd::Quit);
-                    // Dá tempo do ffmpeg fechar e limpar o buffer.
-                    std::thread::sleep(Duration::from_millis(400));
-                    std::process::exit(0);
+                    quit(&s);
                 }
             }));
             let s = shared.clone();
@@ -178,7 +226,7 @@ fn main() -> eframe::Result {
                 _ => {}
             }));
 
-            Ok(Box::new(app::ClipApp::new(shared, tray)))
+            Ok(Box::new(app::ClipApp::new(shared, tray, start_hidden)))
         }),
     );
 

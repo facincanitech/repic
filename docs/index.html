@@ -194,7 +194,7 @@
       <p class="sub" data-t="f_sub">Feito pra rodar junto com o jogo sem você nem lembrar que está aberto.</p>
       <div class="feats">
         <div class="feat"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9z"/></svg></div><h4 data-t="f1_t">Usa a placa de vídeo</h4><p data-t="f1_p">NVIDIA, AMD ou Intel: grava com o encoder da placa, quase sem custo pro jogo.</p></div>
-        <div class="feat"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg></div><h4 data-t="f2_t">Salvar é instantâneo</h4><p data-t="f2_p">O vídeo não é reprocessado: o clipe fica pronto na hora, com um "plim".</p></div>
+        <div class="feat"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg></div><h4 data-t="f2_t">Salvar é instantâneo</h4><p data-t="f2_p">O vídeo não é reprocessado: o clipe fica pronto em segundos e um aviso aparece no canto da tela.</p></div>
         <div class="feat"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h4 data-t="f3_t">Nada sai do seu PC</h4><p data-t="f3_p">Sem login, sem conta, sem nuvem, sem propaganda. Os clipes ficam na sua pasta Vídeos.</p></div>
         <div class="feat"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg></div><h4 data-t="f4_t">Qualquer tecla</h4><p data-t="f4_p">Escolha o atalho que quiser, sozinho ou com Ctrl/Alt/Shift. A tecla continua funcionando no jogo.</p></div>
         <div class="feat"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/></svg></div><h4 data-t="f5_t">Som do PC + microfone</h4><p data-t="f5_p">Grava o que sai nos fones e, se quiser, o seu microfone, tudo sincronizado com o vídeo.</p></div>
@@ -206,7 +206,7 @@
   <section style="padding-top:0">
     <div class="wrap">
       <h2 data-t="s_title">Em 3 passos</h2>
-      <p class="sub" data-t="s_sub">Instala em segundos, sem pedir administrador.</p>
+      <p class="sub" data-t="s_sub">Instala em segundos. Ao abrir, aceite rodar como administrador: assim o atalho funciona em qualquer jogo.</p>
       <div class="steps">
         <div class="step"><h4 data-t="s1_t">Baixe e instale</h4><p data-t="s1_p">Abra o RePic-Setup.exe e clique em Avançar. Ele cria o atalho no Menu Iniciar.</p></div>
         <div class="step"><h4 data-t="s2_t">Abra e jogue</h4><p data-t="s2_p">Ele fica na bandeja, perto do relógio, gravando em loop. Pode até iniciar com o Windows.</p></div>
@@ -222,7 +222,7 @@
       <div class="faq">
         <details><summary data-t="q1">O Windows disse "O Windows protegeu o computador"</summary><p data-t="a1">Isso aparece com programas novos que ainda não são assinados digitalmente. Clique em "Mais informações" e depois em "Executar assim mesmo". O código é aberto no GitHub.</p></details>
         <details><summary data-t="q2">O clipe saiu com a tela preta</summary><p data-t="a2">Alguns jogos em tela cheia exclusiva bloqueiam a captura. Use o modo "janela sem bordas" (borderless) nas configurações de vídeo do jogo.</p></details>
-        <details><summary data-t="q3">O atalho não funciona dentro de um jogo</summary><p data-t="a3">Se o jogo roda como administrador, o Windows não deixa outros programas verem as teclas. Abra o RePic como administrador também.</p></details>
+        <details><summary data-t="q3">O atalho não funciona dentro de um jogo</summary><p data-t="a3">Se o jogo roda como administrador, o Windows só deixa o RePic ver as teclas se ele também rodar como administrador. Já vem ligado: confira em ⚙ → "Rodar como administrador". Se estiver desligado, o RePic avisa no canto da tela.</p></details>
         <details><summary data-t="q4">Pesa no FPS?</summary><p data-t="a4">Quase nada: a gravação usa o chip de vídeo dedicado da placa (NVENC, AMF ou QuickSync), que é separado do que roda o jogo.</p></details>
         <details><summary data-t="q5">É grátis mesmo?</summary><p data-t="a5">Sim. Sem versão paga, sem marca d'água, sem propaganda.</p></details>
       </div>
@@ -261,19 +261,19 @@ const T = {
     m_folder: "Folder", m_export: "Export", m_delete: "Delete",
     f_title: "Actually lightweight", f_sub: "Made to run alongside your game without you even noticing it's open.",
     f1_t: "Uses your GPU", f1_p: "NVIDIA, AMD or Intel: records with the graphics card's encoder, almost free for your game.",
-    f2_t: "Saving is instant", f2_p: "The video isn't re-encoded: the clip is ready right away, with a little chime.",
+    f2_t: "Saving is instant", f2_p: "The video isn't re-encoded: the clip is ready in seconds and a notice shows up in the corner.",
     f3_t: "Nothing leaves your PC", f3_p: "No login, no account, no cloud, no ads. Clips stay in your Videos folder.",
     f4_t: "Any key", f4_p: "Pick any shortcut, alone or with Ctrl/Alt/Shift. The key still works in your game.",
     f5_t: "PC sound + microphone", f5_p: "Records what plays on your headphones and, if you want, your mic, in sync with the video.",
     f6_t: "Native to your monitor", f6_p: "Records at your monitor's FPS and resolution (up to 240 fps), or lower if you prefer. Any monitor, even on laptops with two GPUs.",
-    s_title: "3 steps", s_sub: "Installs in seconds, no administrator needed.",
+    s_title: "3 steps", s_sub: "Installs in seconds. When it opens, allow it to run as administrator: that makes the shortcut work in any game.",
     s1_t: "Download and install", s1_p: "Open RePic-Setup.exe and click Next. It adds a Start menu shortcut.",
     s2_t: "Open it and play", s2_p: "It sits in the tray next to the clock, recording in a loop. It can even start with Windows.",
     s3_t: "Press F8", s3_p: "The last 30 seconds (up to 2 minutes) become an MP4 in Videos\\RePic.",
     q_title: "FAQ",
     q1: "Windows said \"Windows protected your PC\"", a1: "That shows up for new programs that aren't digitally signed yet. Click \"More info\" and then \"Run anyway\". The code is open on GitHub.",
     q2: "My clip came out black", a2: "Some games in exclusive fullscreen block capture. Use \"borderless window\" mode in the game's video settings.",
-    q3: "The shortcut doesn't work inside a game", a3: "If the game runs as administrator, Windows won't let other programs see your keys. Run RePic as administrator too.",
+    q3: "The shortcut doesn't work inside a game", a3: "If the game runs as administrator, Windows only lets RePic see your keys if it runs as administrator too. It is on by default: check ⚙ → \"Run as administrator\". If it is off, RePic shows a notice in the corner.",
     q4: "Does it hurt FPS?", a4: "Barely: recording uses the GPU's dedicated video chip (NVENC, AMF or QuickSync), separate from what runs your game.",
     q5: "Is it really free?", a5: "Yes. No paid version, no watermark, no ads.",
     final: "Next epic play? It's already recording.",
@@ -289,19 +289,19 @@ const T = {
     m_folder: "Carpeta", m_export: "Exportar", m_delete: "Eliminar",
     f_title: "Ligero de verdad", f_sub: "Hecho para correr junto al juego sin que te acuerdes de que está abierto.",
     f1_t: "Usa tu tarjeta gráfica", f1_p: "NVIDIA, AMD o Intel: graba con el encoder de la tarjeta, casi sin costo para el juego.",
-    f2_t: "Guardar es instantáneo", f2_p: "El video no se recodifica: el clip queda listo al momento, con un sonidito.",
+    f2_t: "Guardar es instantáneo", f2_p: "El video no se recodifica: el clip queda listo en segundos y aparece un aviso en la esquina.",
     f3_t: "Nada sale de tu PC", f3_p: "Sin login, sin cuenta, sin nube, sin anuncios. Los clips quedan en tu carpeta Videos.",
     f4_t: "Cualquier tecla", f4_p: "Elige el atajo que quieras, solo o con Ctrl/Alt/Shift. La tecla sigue funcionando en el juego.",
     f5_t: "Sonido del PC + micrófono", f5_p: "Graba lo que suena en tus auriculares y, si quieres, tu micrófono, sincronizado con el video.",
     f6_t: "Nativo de tu monitor", f6_p: "Graba a los FPS y la resolución de tu monitor (hasta 240 fps), o menos si prefieres. Cualquier monitor, incluso en portátiles con dos gráficas.",
-    s_title: "En 3 pasos", s_sub: "Se instala en segundos, sin pedir administrador.",
+    s_title: "En 3 pasos", s_sub: "Se instala en segundos. Al abrirlo, acepta ejecutarlo como administrador: así el atajo funciona en cualquier juego.",
     s1_t: "Descarga e instala", s1_p: "Abre RePic-Setup.exe y haz clic en Siguiente. Crea el acceso directo en el menú Inicio.",
     s2_t: "Ábrelo y juega", s2_p: "Se queda en la bandeja junto al reloj, grabando en bucle. Puede iniciar con Windows.",
     s3_t: "Pulsa F8", s3_p: "Los últimos 30 segundos (hasta 2 minutos) se convierten en un MP4 en Videos\\RePic.",
     q_title: "Preguntas",
     q1: "Windows dijo \"Windows protegió tu PC\"", a1: "Aparece con programas nuevos que aún no están firmados digitalmente. Haz clic en \"Más información\" y luego en \"Ejecutar de todas formas\". El código es abierto en GitHub.",
     q2: "El clip salió negro", a2: "Algunos juegos en pantalla completa exclusiva bloquean la captura. Usa el modo \"ventana sin bordes\" en la configuración de video del juego.",
-    q3: "El atajo no funciona dentro de un juego", a3: "Si el juego corre como administrador, Windows no deja que otros programas vean las teclas. Abre RePic como administrador también.",
+    q3: "El atajo no funciona dentro de un juego", a3: "Si el juego corre como administrador, Windows solo deja que RePic vea las teclas si él también corre como administrador. Viene activado: revisa ⚙ → \"Ejecutar como administrador\". Si está desactivado, RePic avisa en la esquina.",
     q4: "¿Baja los FPS?", a4: "Casi nada: la grabación usa el chip de video dedicado de la tarjeta (NVENC, AMF o QuickSync), separado del que corre el juego.",
     q5: "¿Es gratis de verdad?", a5: "Sí. Sin versión paga, sin marca de agua, sin anuncios.",
     final: "¿La próxima jugada épica? Ya se está grabando.",

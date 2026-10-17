@@ -2,6 +2,8 @@ REPIC
 =====
 
 Aperte F8 e os últimos 30 segundos da tela viram um clipe.
+Ao abrir, aceite rodar como administrador: assim o atalho funciona
+até em jogos que rodam como administrador.
 Os clipes vão para: Vídeos\RePic
 
 Tecla, duração, FPS, resolução, qualidade, monitor, microfone e
@@ -20,6 +22,8 @@ https://facincanitech.github.io/repic/
 ENGLISH
 
 Press F8 and the last 30 seconds become a clip, saved to Videos\RePic.
+When it opens, allow it to run as administrator so the shortcut works
+even in games that run as administrator.
 Change the key, length, FPS, resolution, quality, monitor, microphone and
 "start with Windows" in ⚙. Closing the window keeps it in the tray;
 right-click the tray icon -> Quit to exit.

@@ -11,7 +11,7 @@
 use crate::audio;
 use crate::config::{Config, Quality};
 use crate::lang::{fill, t};
-use crate::platform::{self, Monitor, hidden_command};
+use crate::platform::{self, Monitor, Toast, hidden_command};
 use crate::state::{Health, RecCmd, Shared};
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader};
@@ -442,35 +442,53 @@ pub fn start(shared: Arc<Shared>) {
 /// só salva se tiver um jogo (ou outro app) em tela cheia em foco.
 pub fn hotkey_pressed(shared: Arc<Shared>) {
     if !shared.config().anywhere && !platform::foreground_is_fullscreen() {
-        platform::beep_error();
+        notify(&shared, t().toast_no_game, Toast::Error);
         shared.set_event(false, t().no_game);
         return;
     }
     trigger_save(shared);
 }
 
+/// Aviso no canto da tela. Com o aviso desligado (ou se ele não abrir),
+/// avisa só com o som.
+pub fn notify(shared: &Shared, text: &str, kind: Toast) {
+    if !(shared.config().notify && platform::toast(text, kind)) {
+        match kind {
+            Toast::Busy => {}
+            Toast::Ok => platform::beep_ok(),
+            Toast::Error => platform::beep_error(),
+        }
+    }
+}
+
 /// Salva o clipe numa thread pra não travar nada.
 pub fn trigger_save(shared: Arc<Shared>) {
     if shared.saving.swap(true, Ordering::SeqCst) {
-        return; // já está salvando
+        platform::log("clipe: já está salvando outro, ignorado");
+        return;
     }
     let pressed = SystemTime::now();
     std::thread::spawn(move || {
+        platform::log("clipe: salvando");
+        notify(&shared, t().toast_clipping, Toast::Busy);
         shared.set_event(true, t().saving);
         match save_clip(&shared, pressed) {
             Ok(path) => {
-                platform::beep_ok();
                 let name = path
                     .file_name()
                     .unwrap_or_default()
                     .to_string_lossy()
                     .to_string();
+                platform::log(&format!("clipe: salvo {name}"));
+                notify(&shared, t().toast_saved, Toast::Ok);
                 shared.set_event(true, fill(t().saved, &[&name]));
                 shared.history_dirty.store(true, Ordering::SeqCst);
             }
             Err(e) => {
-                platform::beep_error();
-                shared.set_event(false, fill(t().save_failed, &[&e]));
+                platform::log(&format!("clipe: falhou: {e}"));
+                let msg = fill(t().save_failed, &[&e]);
+                notify(&shared, &msg, Toast::Error);
+                shared.set_event(false, msg);
             }
         }
         shared.saving.store(false, Ordering::SeqCst);

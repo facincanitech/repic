@@ -67,11 +67,15 @@ pub struct ClipApp {
     capturing: bool,
     monitors: Vec<Monitor>,
     autostart: bool,
+    /// Aberto com --tray: quadros que faltam pra esconder a janela (o eframe
+    /// mostra ela sozinho depois do primeiro quadro, mesmo pedindo escondida).
+    hide_in: Option<u8>,
 }
 
 impl ClipApp {
-    pub fn new(shared: Arc<Shared>, tray: Option<tray_icon::TrayIcon>) -> Self {
+    pub fn new(shared: Arc<Shared>, tray: Option<tray_icon::TrayIcon>, start_hidden: bool) -> Self {
         Self {
+            hide_in: start_hidden.then_some(1),
             shared,
             tray,
             clips: Vec::new(),
@@ -362,6 +366,32 @@ impl ClipApp {
         self.settings_open = true;
     }
 
+    /// Ligou/desligou "Rodar como administrador" (já salvo no config).
+    fn apply_admin(&mut self) {
+        let admin = self.shared.config().admin;
+        if admin && !platform::is_admin() {
+            // Reabre como admin; o novo espera este fechar (--restart).
+            if platform::relaunch_as_admin("--restart") {
+                crate::quit(&self.shared);
+            }
+            let mut cfg = self.shared.config();
+            cfg.admin = false;
+            cfg.save();
+            *self.shared.config.lock().unwrap() = cfg;
+            self.shared.set_event(false, t().admin_declined);
+            return;
+        }
+        // Troca o "Iniciar com o Windows" entre tarefa de admin e registro.
+        if self.autostart
+            && let Err(e) = platform::set_autostart(true, admin && platform::is_admin())
+        {
+            self.shared.set_event(false, fill(t().autostart_failed, &[&e]));
+            return;
+        }
+        let msg = if admin { t().admin_on_now } else { t().admin_off_later };
+        self.shared.set_event(true, msg);
+    }
+
     fn settings_modal(&mut self, ctx: &egui::Context) {
         if !self.settings_open {
             return;
@@ -508,6 +538,9 @@ impl ClipApp {
                     ui.add_space(4.0);
                     ui.checkbox(&mut cfg.anywhere, t().anywhere);
                     hint(ui, if cfg.anywhere { t().anywhere_on } else { t().anywhere_off });
+                    ui.add_space(4.0);
+                    ui.checkbox(&mut cfg.notify, t().notify);
+                    hint(ui, t().notify_hint);
                 });
 
                 section(ui, t().sec_audio, |ui| {
@@ -519,6 +552,9 @@ impl ClipApp {
                 section(ui, t().sec_system, |ui| {
                     ui.checkbox(&mut autostart, t().autostart);
                     hint(ui, t().autostart_hint);
+                    ui.add_space(4.0);
+                    ui.checkbox(&mut cfg.admin, t().admin);
+                    hint(ui, t().admin_hint);
                     ui.add_space(4.0);
                     ui.horizontal(|ui| {
                         ui.label(t().clips_folder);
@@ -566,7 +602,7 @@ impl ClipApp {
             cfg.output_dir = dir;
         }
         if autostart != self.autostart {
-            match platform::set_autostart(autostart) {
+            match platform::set_autostart(autostart, cfg.admin && platform::is_admin()) {
                 Ok(()) => self.autostart = autostart,
                 Err(e) => self.shared.set_event(false, fill(t().autostart_failed, &[&e])),
             }
@@ -586,10 +622,14 @@ impl ClipApp {
                 self.shared.history_dirty.store(true, Ordering::SeqCst);
             }
             cfg.shortcut = self.shared.config().shortcut; // salvo à parte em handle_capture
+            let admin_changed = cfg.admin != before.admin;
             cfg.save();
             *self.shared.config.lock().unwrap() = cfg;
             if needs_restart {
                 self.shared.send(RecCmd::Restart);
+            }
+            if admin_changed {
+                self.apply_admin();
             }
         }
         if close {
@@ -713,6 +753,15 @@ fn key_chip(ui: &mut egui::Ui, key: &str) {
 
 impl eframe::App for ClipApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if let Some(n) = self.hide_in {
+            if n == 0 {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                self.hide_in = None;
+            } else {
+                self.hide_in = Some(n - 1);
+                ctx.request_repaint();
+            }
+        }
         // Pedido da bandeja pra mostrar a janela.
         if self.shared.show_requested.swap(false, Ordering::SeqCst) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));

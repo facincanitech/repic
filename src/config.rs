@@ -46,6 +46,11 @@ pub struct Config {
     pub mic: bool,
     /// true: o atalho clipa em qualquer lugar. false: só com jogo/app em tela cheia.
     pub anywhere: bool,
+    /// Aviso no canto da tela ao clipar ("Clipe salvo").
+    pub notify: bool,
+    /// Abre como administrador: necessário pra clipar jogos que rodam como
+    /// admin (o Windows esconde o teclado deles dos programas comuns).
+    pub admin: bool,
     /// Monitor gravado (ver `platform::Monitor::id`). Vazio = o principal do Windows.
     pub monitor: String,
     pub output_dir: PathBuf,
@@ -65,6 +70,8 @@ impl Default for Config {
             audio: true,
             mic: false,
             anywhere: true,
+            notify: true,
+            admin: true,
             monitor: String::new(),
             output_dir: videos.join("RePic"),
         }
@@ -167,6 +174,8 @@ mod tests {
         assert_eq!(cfg.frame_rate, 0);
         assert_eq!(cfg.quality, Quality::High);
         assert!(cfg.anywhere);
+        assert!(cfg.notify);
+        assert!(cfg.admin);
         assert!(!cfg.mic);
         assert!(cfg.monitor.is_empty());
     }

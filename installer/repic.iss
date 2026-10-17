@@ -1,5 +1,5 @@
 ; Instalador do RePic (Inno Setup 6).
-; Compilar: iscc /DMyAppVersion=0.3.0 /DFfmpegExe=caminho\ffmpeg.exe installer\repic.iss
+; Compilar: iscc /DMyAppVersion=0.3.1 /DFfmpegExe=caminho\ffmpeg.exe installer\repic.iss
 ; Sai em dist\RePic-Setup.exe.
 
 #ifndef MyAppVersion
@@ -69,13 +69,32 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 Filename: "{app}\RePic.exe"; Description: "{cm:LaunchProgram,RePic}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
-; Fecha o RePic (e o ffmpeg dele) antes de apagar os arquivos.
+; Fecha o RePic (e o ffmpeg dele) antes de apagar os arquivos. Como admin,
+; só o pedido pelo próprio RePic funciona; o taskkill é pra versões antigas.
+Filename: "{app}\RePic.exe"; Parameters: "--quit"; Flags: runhidden waituntilterminated; RunOnceId: "QuitRePic"
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /T /IM RePic.exe"; Flags: runhidden; RunOnceId: "CloseRePic"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
 
 [Code]
+// O RePic roda como administrador por padrão: o instalador (sem admin) não
+// consegue fechá-lo à força, então pede pra ele mesmo fechar (--quit).
+procedure QuitRunningRePic;
+var
+  Code: Integer;
+begin
+  if FileExists(ExpandConstant('{app}\RePic.exe')) then
+    Exec(ExpandConstant('{app}\RePic.exe'), '--quit', '', SW_HIDE, ewWaitUntilTerminated, Code);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  // Antes da checagem de "programas abertos", que não fecha um RePic admin.
+  QuitRunningRePic;
+  Result := '';
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   Code: Integer;
@@ -86,9 +105,17 @@ begin
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  Code: Integer;
 begin
   // O app pode ter ligado o "iniciar com o Windows" sozinho; tira na desinstalação.
   // Clipes (Vídeos\RePic) e configurações ficam.
   if CurUninstallStep = usPostUninstall then
+  begin
     RegDeleteValue(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\Run', 'RePic');
+    // Como admin, o "iniciar com o Windows" é uma tarefa agendada: apagar
+    // pede confirmação do Windows (só se ela existir).
+    if Exec(ExpandConstant('{sys}\schtasks.exe'), '/Query /TN RePic', '', SW_HIDE, ewWaitUntilTerminated, Code) and (Code = 0) then
+      ShellExec('runas', ExpandConstant('{sys}\schtasks.exe'), '/Delete /TN RePic /F', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  end;
 end;

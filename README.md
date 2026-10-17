@@ -7,9 +7,9 @@ Sem login, sem conta, sem upload, sem overlay. Só um `.exe` leve na bandeja.
 
 ## Como usar
 
-1. Baixe o **[RePic-Setup.exe](https://github.com/facincanitech/repic/releases/latest/download/RePic-Setup.exe)** (ou pelo [site](https://facincanitech.github.io/repic/)) e instale. Não pede administrador.
-2. Abra o RePic pelo Menu Iniciar.
-3. Jogue. Aconteceu algo épico? **F8**. Ouviu o "plim"? Tá salvo em `Vídeos\RePic`.
+1. Baixe o **[RePic-Setup.exe](https://github.com/facincanitech/repic/releases/latest/download/RePic-Setup.exe)** (ou pelo [site](https://facincanitech.github.io/repic/)) e instale.
+2. Abra o RePic pelo Menu Iniciar. O Windows pede pra rodar como administrador: aceite (é o que deixa o atalho funcionar em jogos que rodam como admin).
+3. Jogue. Aconteceu algo épico? **F8**. Apareceu "Clipe gravado ✓" no canto? Tá salvo em `Vídeos\RePic`.
 
 Pra desinstalar: Configurações do Windows → Aplicativos → RePic (clipes e configurações ficam).
 
@@ -33,7 +33,9 @@ O app fala português, inglês ou espanhol, conforme o idioma do Windows.
 | Clipar em qualquer lugar | ligado: o atalho vale sempre. Desligado: só com jogo/vídeo em tela cheia |
 | Som do PC | liga/desliga |
 | Microfone | liga/desliga (usa o microfone padrão do Windows) |
+| Avisar na tela ao clipar | "Clipando…" / "Clipe gravado ✓" no canto, por cima do jogo e fora do vídeo. Desligado, avisa com som |
 | Iniciar com o Windows | abre escondido na bandeja, já gravando |
+| Rodar como administrador | **ligado** (padrão): clipa até jogos que rodam como admin. Iniciando com o Windows, não pede confirmação |
 | Pasta dos clipes | onde você quiser |
 
 Fica salvo em `%APPDATA%\RePic\config.json`.
@@ -51,7 +53,9 @@ Fica salvo em `%APPDATA%\RePic\config.json`.
 ## Limitações conhecidas
 
 - Jogos em **tela cheia exclusiva** podem sair pretos → use janela sem bordas.
-- Jogo rodando **como administrador**: o Windows não deixa o atalho ver as teclas. Rode o RePic como administrador também, ou use o botão / o menu da bandeja.
+- Jogo rodando **como administrador** com "Rodar como administrador" desligado: o Windows não deixa o atalho ver as teclas (nem por RegisterHotKey nem GetAsyncKeyState). O RePic avisa no canto da tela quando isso acontece.
+- **Tela cheia exclusiva** esconde o aviso na tela (o clipe sai normal).
+- Diário pra investigar problemas: `%APPDATA%\RePic\repic.log`.
 
 ## Compilar
 
@@ -62,13 +66,13 @@ cargo test
 
 Pra rodar direto do código, coloque o `ffmpeg.exe` ao lado do `target/release/RePic.exe`.
 
-Instalador (Inno Setup 6): `iscc /DMyAppVersion=0.3.0 /DFfmpegExe=caminho\ffmpeg.exe installer\repic.iss` → `dist\RePic-Setup.exe`.
+Instalador (Inno Setup 6): `iscc /DMyAppVersion=0.3.1 /DFfmpegExe=caminho\ffmpeg.exe installer\repic.iss` → `dist\RePic-Setup.exe`.
 
 O GitHub Actions (`.github/workflows/build.yml`) faz tudo sozinho: testa, compila, baixa o FFmpeg, monta o instalador e, quando você cria uma tag `v*`, publica em Releases (o botão do site sempre baixa a última):
 
 ```bash
-git tag v0.3.0
-git push origin v0.3.0
+git tag v0.3.1
+git push origin v0.3.1
 ```
 
 ## Estrutura

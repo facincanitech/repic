@@ -7,11 +7,15 @@
 //! - É uma fila de mensagens normal: não tem o problema do gancho de teclado
 //!   (WH_KEYBOARD_LL), que o Windows desliga sem avisar quando demora.
 //! - Usa a tecla física (código do Windows): igual em ABNT2, US…
+//! - Jogo rodando como administrador: o Windows esconde o teclado dele dos
+//!   programas comuns (UIPI). O RePic precisa rodar como admin também; sem
+//!   isso, só avisa (Event::AdminGame).
 
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicIsize, Ordering};
 use std::sync::mpsc::Sender;
+use std::time::{Duration, Instant};
 
 /// Uma combinação de teclas.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -46,6 +50,9 @@ pub enum Event {
     Pressed,
     /// Terminou de escolher um atalho novo (None = cancelou com Esc).
     Captured(Option<Combo>),
+    /// Um jogo rodando como administrador veio pra frente e o RePic não é
+    /// admin: o atalho não vai chegar.
+    AdminGame,
 }
 
 const VK_ESCAPE: u32 = 0x1B;
@@ -74,6 +81,8 @@ struct Hook {
     capturing: bool,
     /// A tecla do atalho está pressionada (ignora a repetição de segurar).
     held: bool,
+    /// Último aperto enviado (por qualquer caminho).
+    last_pressed: Option<Instant>,
     tx: Option<Sender<Event>>,
 }
 
@@ -166,13 +175,51 @@ pub fn start(combo: Combo, handler: impl Fn(Event) + Send + 'static) {
     imp::install();
 }
 
+fn send_event(ev: Event) {
+    let guard = HOOK.lock().unwrap();
+    if let Some(tx) = guard.as_ref().and_then(|h| h.tx.as_ref()) {
+        let _ = tx.send(ev);
+    }
+}
+
+/// Dois apertos colados (ex.: tecla falhando) contam um só.
+const SAME_PRESS: Duration = Duration::from_millis(400);
+
+fn send_pressed(h: &mut Hook, via: &str) {
+    if h.last_pressed.is_some_and(|t| t.elapsed() < SAME_PRESS) {
+        crate::platform::log(&format!("atalho ({via}): ignorado, mesmo aperto"));
+        return;
+    }
+    h.last_pressed = Some(Instant::now());
+    crate::platform::log(&format!("atalho ({via}): apertou"));
+    if let Some(tx) = &h.tx {
+        let _ = tx.send(Event::Pressed);
+    }
+}
+
+/// O soltar da tecla pode nunca chegar (trocou pra um jogo admin com ela
+/// apertada): libera o `held` se a tecla já está solta.
+fn release_if_up(is_down: impl Fn(u32) -> bool) {
+    with_hook(|h| {
+        if h.held && !is_down(h.combo.vk) {
+            h.held = false;
+        }
+    });
+}
+
 fn dispatch(k: Key) {
     let mut guard = HOOK.lock().unwrap();
-    if let Some(h) = guard.as_mut()
-        && let Some(ev) = h.on_key(k)
-        && let Some(tx) = &h.tx
-    {
-        let _ = tx.send(ev);
+    let Some(h) = guard.as_mut() else {
+        return;
+    };
+    match h.on_key(k) {
+        Some(Event::Pressed) => send_pressed(h, "Raw Input"),
+        Some(ev) => {
+            if let Some(tx) = &h.tx {
+                let _ = tx.send(ev);
+            }
+        }
+        None => {}
     }
 }
 
@@ -212,6 +259,7 @@ fn key_name(c: &Combo) -> String {
 #[cfg(windows)]
 mod imp {
     use super::{Key, WINDOW};
+    use std::cell::Cell;
     use std::sync::atomic::Ordering;
     use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -223,8 +271,26 @@ mod imp {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         CreateWindowExW, DefWindowProcW, DispatchMessageW, GA_ROOT, GetAncestor,
         GetForegroundWindow, GetMessageW, HWND_MESSAGE, MSG, RI_KEY_BREAK, RI_KEY_E0,
-        RegisterClassW, WM_INPUT, WNDCLASSW,
+        RegisterClassW, SetTimer, WM_INPUT, WM_TIMER, WNDCLASSW,
     };
+
+    thread_local! {
+        /// Jogo admin que já ganhou o aviso (pra avisar uma vez por jogo).
+        static WARNED_PID: Cell<u32> = const { Cell::new(0) };
+    }
+
+    const CHECK_TIMER: usize = 1;
+
+    /// Jogo como administrador na frente e o RePic não: o Windows não deixa
+    /// o teclado do jogo chegar aqui (UIPI). Nem RegisterHotKey nem
+    /// GetAsyncKeyState passam (testado). Só dá pra avisar, uma vez por jogo.
+    fn check_admin_game() {
+        let pid = crate::platform::foreground_admin_app().unwrap_or(0);
+        if pid != 0 && WARNED_PID.replace(pid) != pid {
+            crate::platform::log(&format!("jogo admin na frente (pid {pid}): o atalho não chega"));
+            super::send_event(super::Event::AdminGame);
+        }
+    }
 
     fn pressed(vk: i32) -> bool {
         unsafe { GetAsyncKeyState(vk) as u16 & 0x8000 != 0 }
@@ -279,8 +345,13 @@ mod imp {
     }
 
     unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-        if msg == WM_INPUT {
-            on_raw_input(lparam);
+        match msg {
+            WM_INPUT => on_raw_input(lparam),
+            WM_TIMER => {
+                super::release_if_up(|vk| pressed(vk as i32));
+                check_admin_game();
+            }
+            _ => {}
         }
         // DefWindowProc também libera o RAWINPUT do sistema.
         unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
@@ -328,6 +399,8 @@ mod imp {
                     eprintln!("atalho: o Windows recusou o Raw Input");
                     return;
                 }
+                // Confere a janela da frente (jogo como administrador?).
+                SetTimer(hwnd, CHECK_TIMER, 300, None);
                 let mut msg: MSG = std::mem::zeroed();
                 while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
                     DispatchMessageW(&msg);
@@ -446,6 +519,18 @@ mod tests {
             Some(Event::Captured(None))
         ));
         assert_eq!(h.combo, Combo::default());
+    }
+
+    #[test]
+    fn key_up_lost_behind_admin_game_does_not_eat_next_press() {
+        let mut h = hook(Combo::default());
+        assert!(pressed(h.on_key(key(0x77, true, NONE))));
+        // O soltar não chegou (UIPI): fica "segurando" até o timer conferir.
+        assert!(!pressed(h.on_key(key(0x77, true, NONE))));
+        *HOOK.lock().unwrap() = Some(h);
+        release_if_up(|_| false);
+        let mut h = HOOK.lock().unwrap().take().unwrap();
+        assert!(pressed(h.on_key(key(0x77, true, NONE))));
     }
 
     #[test]
