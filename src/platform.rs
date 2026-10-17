@@ -37,6 +37,8 @@ pub struct Monitor {
     pub y: i32,
     pub width: i32,
     pub height: i32,
+    /// Taxa de atualização (Hz). Gravar acima disso só repete quadros.
+    pub refresh: u32,
 }
 
 /// Escolhe o monitor salvo no config; se sumiu (ou vazio), o principal.
@@ -60,7 +62,8 @@ mod imp {
         RECT,
     };
     use windows_sys::Win32::Graphics::Gdi::{
-        GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
+        DEVMODEW, ENUM_CURRENT_SETTINGS, EnumDisplaySettingsW, GetMonitorInfoW,
+        MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow,
     };
     use windows_sys::Win32::System::Diagnostics::Debug::MessageBeep;
     use windows_sys::Win32::System::JobObjects::*;
@@ -169,7 +172,20 @@ mod imp {
                         && d.AttachedToDesktop.as_bool()
                     {
                         let r = d.DesktopCoordinates;
+                        let mut mode: DEVMODEW = std::mem::zeroed();
+                        mode.dmSize = std::mem::size_of::<DEVMODEW>() as u16;
+                        let refresh = if EnumDisplaySettingsW(
+                            d.DeviceName.as_ptr(),
+                            ENUM_CURRENT_SETTINGS,
+                            &mut mode,
+                        ) != 0
+                        {
+                            mode.dmDisplayFrequency
+                        } else {
+                            60
+                        };
                         out.push(Monitor {
+                            refresh: if refresh < 24 { 60 } else { refresh },
                             label: String::new(),
                             primary: r.left == 0 && r.top == 0,
                             adapter: a,
@@ -417,6 +433,7 @@ mod tests {
             y: 0,
             width: 1920,
             height: 1080,
+            refresh: 144,
         }
     }
 

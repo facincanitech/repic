@@ -32,25 +32,32 @@ jobs:
           Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile ffmpeg.zip
           Expand-Archive ffmpeg.zip -DestinationPath ffmpeg-src
           $bin = Get-ChildItem -Path ffmpeg-src -Recurse -Filter ffmpeg.exe | Select-Object -First 1
-          New-Item -ItemType Directory -Force -Path dist/RePic | Out-Null
-          Copy-Item $bin.FullName dist/RePic/
-          Copy-Item (Join-Path $bin.DirectoryName "ffprobe.exe") dist/RePic/
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item $bin.FullName dist/ffmpeg.exe
 
-      - name: Montar pacote
+      - name: Instalar Inno Setup 6.7.3 (versão fixa, a mesma testada)
         shell: pwsh
         run: |
-          Copy-Item target/release/RePic.exe dist/RePic/
-          Copy-Item dist-files/LEIA-ME.txt dist/RePic/
-          Compress-Archive -Path dist/RePic -DestinationPath RePic-windows.zip
+          Invoke-WebRequest -Uri "https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe" -OutFile is.exe
+          Start-Process .\is.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/CURRENTUSER','/PORTABLE=1','/NOICONS',"/DIR=$PWD\inno" -Wait
+          if (-not (Test-Path .\inno\ISCC.exe)) { throw "Inno Setup não instalou" }
+
+      - name: Montar instalador
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+          & .\inno\ISCC.exe /Q "/DMyAppVersion=$version" installer\repic.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-Item dist\RePic-Setup.exe
 
       - uses: actions/upload-artifact@v4
         with:
-          name: RePic-windows
-          path: RePic-windows.zip
+          name: RePic-Setup
+          path: dist/RePic-Setup.exe
 
       - name: Publicar release (só em tag v*)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: RePic-windows.zip
+          files: dist/RePic-Setup.exe
           generate_release_notes: true

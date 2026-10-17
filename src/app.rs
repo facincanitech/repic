@@ -1,7 +1,7 @@
 //! Janela: barra de cima (status + clipar), grade com os últimos clipes,
 //! e as configurações num modal.
 
-use crate::config::{FPS_OPTIONS, SECONDS_OPTIONS};
+use crate::config::{FPS_OPTIONS, Quality, RES_OPTIONS, SECONDS_OPTIONS};
 use crate::hotkey;
 use crate::lang::{fill, t};
 use crate::platform::{self, Monitor};
@@ -385,93 +385,151 @@ impl ClipApp {
             });
             ui.add_space(6.0);
 
-            section(ui, t().sec_shortcut, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(t().key_to_clip);
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if self.capturing {
-                            if ui.button(t().cancel).clicked() {
-                                change_key = true;
+            // Em janela baixa, as configurações rolam em vez de cortar o topo.
+            let max_h = (ctx.content_rect().height() - 150.0).max(200.0);
+            egui::ScrollArea::vertical().max_height(max_h).show(ui, |ui| {
+                section(ui, t().sec_shortcut, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(t().key_to_clip);
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if self.capturing {
+                                if ui.button(t().cancel).clicked() {
+                                    change_key = true;
+                                }
+                                ui.label(RichText::new(t().press_key).color(ACCENT));
+                            } else {
+                                if ui.button(t().change).clicked() {
+                                    change_key = true;
+                                }
+                                key_chip(ui, &hotkey::label(&cfg.shortcut));
                             }
-                            ui.label(RichText::new(t().press_key).color(ACCENT));
+                        });
+                    });
+                    hint(ui, t().shortcut_hint);
+                });
+
+                section(ui, t().sec_recording, |ui| {
+                    egui::Grid::new("rec_grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
+                        ui.label(t().monitor);
+                        let current = if cfg.monitor.is_empty() {
+                            t().primary_windows.to_string()
                         } else {
-                            if ui.button(t().change).clicked() {
-                                change_key = true;
+                            self.monitors
+                                .iter()
+                                .find(|m| m.id == cfg.monitor)
+                                .map(|m| m.label.clone())
+                                .unwrap_or_else(|| t().disconnected.into())
+                        };
+                        egui::ComboBox::from_id_salt("mon")
+                            .selected_text(current)
+                            .width(220.0)
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(&mut cfg.monitor, String::new(), t().primary_windows);
+                                for m in &self.monitors {
+                                    ui.selectable_value(&mut cfg.monitor, m.id.clone(), &m.label);
+                                }
+                            });
+                        ui.end_row();
+
+                        ui.label(t().duration);
+                        egui::ComboBox::from_id_salt("dur")
+                            .selected_text(fill(t().last_secs, &[&cfg.seconds]))
+                            .show_ui(ui, |ui| {
+                                for s in SECONDS_OPTIONS {
+                                    ui.selectable_value(&mut cfg.seconds, s, fill(t().last_secs, &[&s]));
+                                }
+                            });
+                        ui.end_row();
+
+                        // O "nativo" vem do monitor escolhido; dá pra reduzir.
+                        let mon = platform::pick_monitor(&self.monitors, &cfg.monitor);
+                        let native_fps = mon.as_ref().map(|m| m.refresh).unwrap_or(60);
+                        let native_label = fill(t().native_fps, &[&native_fps]);
+                        ui.label("FPS");
+                        let fps_text = if cfg.frame_rate == 0 || cfg.frame_rate >= native_fps {
+                            native_label.clone()
+                        } else {
+                            format!("{} fps", cfg.frame_rate)
+                        };
+                        egui::ComboBox::from_id_salt("fps")
+                            .selected_text(fps_text)
+                            .width(220.0)
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(&mut cfg.frame_rate, 0, native_label);
+                                for f in FPS_OPTIONS.into_iter().filter(|&f| f < native_fps) {
+                                    ui.selectable_value(&mut cfg.frame_rate, f, format!("{f} fps"));
+                                }
+                            });
+                        ui.end_row();
+
+                        let (nw, nh) = mon.as_ref().map(|m| (m.width, m.height)).unwrap_or((1920, 1080));
+                        let native_label = fill(t().native_res, &[&nw, &nh]);
+                        ui.label(t().resolution);
+                        let res_text = if cfg.resolution == 0 || cfg.resolution as i32 >= nh {
+                            native_label.clone()
+                        } else {
+                            format!("{}p", cfg.resolution)
+                        };
+                        egui::ComboBox::from_id_salt("res")
+                            .selected_text(res_text)
+                            .width(220.0)
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(&mut cfg.resolution, 0, native_label);
+                                for h in RES_OPTIONS.into_iter().filter(|&h| (h as i32) < nh) {
+                                    ui.selectable_value(&mut cfg.resolution, h, format!("{h}p"));
+                                }
+                            });
+                        ui.end_row();
+
+                        let q_label = |q: Quality| {
+                            let name = t().q_names[q.index()];
+                            if q == Quality::default() {
+                                format!("{name}{}", t().recommended)
+                            } else {
+                                name.to_string()
                             }
-                            key_chip(ui, &hotkey::label(&cfg.shortcut));
-                        }
+                        };
+                        ui.label(t().quality);
+                        egui::ComboBox::from_id_salt("quality")
+                            .selected_text(q_label(cfg.quality))
+                            .width(220.0)
+                            .show_ui(ui, |ui| {
+                                for q in Quality::ALL {
+                                    ui.selectable_value(&mut cfg.quality, q, q_label(q));
+                                }
+                            });
+                        ui.end_row();
                     });
+                    hint(ui, t().q_hints[cfg.quality.index()]);
+                    let mon = platform::pick_monitor(&self.monitors, &cfg.monitor);
+                    if cfg.resolution != 0 && mon.is_some_and(|m| (cfg.resolution as i32) < m.height) {
+                        hint(ui, t().scale_hint);
+                    }
+                    ui.add_space(4.0);
+                    ui.checkbox(&mut cfg.anywhere, t().anywhere);
+                    hint(ui, if cfg.anywhere { t().anywhere_on } else { t().anywhere_off });
                 });
-                hint(ui, t().shortcut_hint);
-            });
 
-            section(ui, t().sec_recording, |ui| {
-                egui::Grid::new("rec_grid").num_columns(2).spacing([12.0, 8.0]).show(ui, |ui| {
-                    ui.label(t().duration);
-                    egui::ComboBox::from_id_salt("dur")
-                        .selected_text(fill(t().last_secs, &[&cfg.seconds]))
-                        .show_ui(ui, |ui| {
-                            for s in SECONDS_OPTIONS {
-                                ui.selectable_value(&mut cfg.seconds, s, fill(t().last_secs, &[&s]));
-                            }
-                        });
-                    ui.end_row();
-
-                    ui.label(t().quality);
-                    egui::ComboBox::from_id_salt("fps")
-                        .selected_text(format!("{} fps", cfg.fps))
-                        .show_ui(ui, |ui| {
-                            for f in FPS_OPTIONS {
-                                ui.selectable_value(&mut cfg.fps, f, format!("{f} fps"));
-                            }
-                        });
-                    ui.end_row();
-
-                    ui.label(t().monitor);
-                    let current = if cfg.monitor.is_empty() {
-                        t().primary_windows.to_string()
-                    } else {
-                        self.monitors
-                            .iter()
-                            .find(|m| m.id == cfg.monitor)
-                            .map(|m| m.label.clone())
-                            .unwrap_or_else(|| t().disconnected.into())
-                    };
-                    egui::ComboBox::from_id_salt("mon")
-                        .selected_text(current)
-                        .width(220.0)
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut cfg.monitor, String::new(), t().primary_windows);
-                            for m in &self.monitors {
-                                ui.selectable_value(&mut cfg.monitor, m.id.clone(), &m.label);
-                            }
-                        });
-                    ui.end_row();
+                section(ui, t().sec_audio, |ui| {
+                    ui.checkbox(&mut cfg.audio, t().pc_audio);
+                    ui.checkbox(&mut cfg.mic, t().mic);
+                    hint(ui, t().mic_hint);
                 });
-                ui.add_space(4.0);
-                ui.checkbox(&mut cfg.anywhere, t().anywhere);
-                hint(ui, if cfg.anywhere { t().anywhere_on } else { t().anywhere_off });
-            });
 
-            section(ui, t().sec_audio, |ui| {
-                ui.checkbox(&mut cfg.audio, t().pc_audio);
-                ui.checkbox(&mut cfg.mic, t().mic);
-                hint(ui, t().mic_hint);
-            });
-
-            section(ui, t().sec_system, |ui| {
-                ui.checkbox(&mut autostart, t().autostart);
-                hint(ui, t().autostart_hint);
-                ui.add_space(4.0);
-                ui.horizontal(|ui| {
-                    ui.label(t().clips_folder);
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button(t().change_folder).clicked() {
-                            pick_dir = true;
-                        }
+                section(ui, t().sec_system, |ui| {
+                    ui.checkbox(&mut autostart, t().autostart);
+                    hint(ui, t().autostart_hint);
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        ui.label(t().clips_folder);
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui.button(t().change_folder).clicked() {
+                                pick_dir = true;
+                            }
+                        });
                     });
+                    ui.label(RichText::new(cfg.output_dir.display().to_string()).weak().small());
                 });
-                ui.label(RichText::new(cfg.output_dir.display().to_string()).weak().small());
             });
 
             // Rodapé: versão e marca.
@@ -515,7 +573,11 @@ impl ClipApp {
         }
         if cfg != before {
             let needs_restart =
-                cfg.fps != before.fps || cfg.seconds != before.seconds || cfg.monitor != before.monitor;
+                cfg.frame_rate != before.frame_rate
+                    || cfg.resolution != before.resolution
+                    || cfg.quality != before.quality
+                    || cfg.seconds != before.seconds
+                    || cfg.monitor != before.monitor;
             self.shared.audio.enabled.store(cfg.audio, Ordering::Relaxed);
             self.shared.mic.enabled.store(cfg.mic, Ordering::Relaxed);
             self.shared.audio.set_keep_secs(cfg.seconds);

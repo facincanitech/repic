@@ -1,31 +1,31 @@
 REPIC
 =====
 
-1. Deixe os 3 arquivos juntos na mesma pasta:
-   RePic.exe, ffmpeg.exe e ffprobe.exe
-2. Abra o RePic.exe
-3. Jogue normalmente. Apertou F8, os últimos 30 segundos viram um clipe.
-
+Aperte F8 e os últimos 30 segundos da tela viram um clipe.
 Os clipes vão para: Vídeos\RePic
-Tecla, duração, monitor, microfone e "iniciar com o Windows": botão ⚙ na janela.
+
+Tecla, duração, FPS, resolução, qualidade, monitor, microfone e
+"iniciar com o Windows": botão ⚙ na janela do RePic.
 Fechar a janela não para o programa: ele fica na bandeja, perto do relógio.
 Para sair de verdade: botão direito no ícone da bandeja -> Sair.
+Para desinstalar: Configurações do Windows -> Aplicativos -> RePic.
 
 Dica: jogos em tela cheia exclusiva podem sair com a tela preta.
 Use o modo "janela sem bordas" (borderless) no jogo.
 
 Sem login, sem conta, sem upload. Nada sai do seu PC.
+https://facincanitech.github.io/repic/
 
 ---
 ENGLISH
 
-Keep RePic.exe, ffmpeg.exe and ffprobe.exe in the same folder and open RePic.exe.
 Press F8 and the last 30 seconds become a clip, saved to Videos\RePic.
-Change the key, length, monitor, microphone and "start with Windows" in ⚙.
-Closing the window keeps it in the tray; right-click the tray icon -> Quit to exit.
+Change the key, length, FPS, resolution, quality, monitor, microphone and
+"start with Windows" in ⚙. Closing the window keeps it in the tray;
+right-click the tray icon -> Quit to exit.
 Exclusive fullscreen games may record black: use borderless window mode.
 
 ---
-Este pacote inclui o FFmpeg (https://ffmpeg.org), distribuído sob a
+Este programa inclui o FFmpeg (https://ffmpeg.org), distribuído sob a
 licença GPL v3. Código-fonte e build: https://www.gyan.dev/ffmpeg/builds/
-This package includes FFmpeg (https://ffmpeg.org), licensed under GPL v3.
+This program includes FFmpeg (https://ffmpeg.org), licensed under GPL v3.

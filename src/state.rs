@@ -30,7 +30,6 @@ pub enum RecCmd {
 
 pub struct Paths {
     pub ffmpeg: PathBuf,
-    pub ffprobe: PathBuf,
     pub buffer_dir: PathBuf,
     pub work_dir: PathBuf,
     pub thumbs_dir: PathBuf,
@@ -45,7 +44,7 @@ pub struct Shared {
     /// Microfone padrão do Windows.
     pub mic: Arc<AudioRing>,
     pub saving: AtomicBool,
-    /// Resultado de "escolher atalho" vindo do gancho de teclado
+    /// Resultado de "escolher atalho" vindo do teclado (hotkey.rs)
     /// (Some(None) = cancelou).
     pub captured: Mutex<Option<Option<Combo>>>,
     pub history_dirty: AtomicBool,
@@ -74,7 +73,6 @@ impl Shared {
         let temp = std::env::temp_dir().join("RePic");
         let paths = Paths {
             ffmpeg: find("ffmpeg"),
-            ffprobe: find("ffprobe"),
             buffer_dir: temp.join("buffer"),
             work_dir: temp.join("work"),
             thumbs_dir: app.join("thumbs"),

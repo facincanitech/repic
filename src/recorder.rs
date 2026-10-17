@@ -9,6 +9,7 @@
 //!   colamos o áudio (PC + microfone) da mesma janela de tempo e pronto.
 
 use crate::audio;
+use crate::config::{Config, Quality};
 use crate::lang::{fill, t};
 use crate::platform::{self, Monitor, hidden_command};
 use crate::state::{Health, RecCmd, Shared};
@@ -33,19 +34,70 @@ const NVIDIA: u32 = 0x10de;
 const AMD: u32 = 0x1002;
 const INTEL: u32 = 0x8086;
 
+/// Como gravar: FPS, tamanho e qualidade já resolvidos pro monitor.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Capture {
+    pub fps: u32,
+    /// Reduzir pra (largura, altura). None = resolução nativa.
+    pub scale: Option<(u32, u32)>,
+    pub quality: Quality,
+}
+
+impl Capture {
+    /// "Nativo" vira a taxa e a resolução do monitor; uma escolha acima do
+    /// que o monitor faz cai pro nativo (gravar mais só repetiria quadros).
+    pub fn resolve(cfg: &Config, mon: Option<&Monitor>) -> Self {
+        let native_fps = mon.map(|m| m.refresh).unwrap_or(60);
+        let fps = match cfg.frame_rate {
+            0 => native_fps,
+            f => f.min(native_fps),
+        };
+        let scale = mon.and_then(|m| {
+            let h = cfg.resolution;
+            if h == 0 || h as i32 >= m.height {
+                return None;
+            }
+            // Mesma proporção do monitor, largura par (o H.264 exige).
+            let w = ((m.width as f64 * h as f64 / m.height as f64) / 2.0).round() as u32 * 2;
+            Some((w, h))
+        });
+        Self {
+            fps,
+            scale,
+            quality: cfg.quality,
+        }
+    }
+
+    /// Escolhe o valor do nível de qualidade (Leve, Normal, Alta, Máxima).
+    fn q(&self, levels: [u32; 4]) -> String {
+        levels[self.quality.index()].to_string()
+    }
+}
+
 struct Profile {
     name: &'static str,
     /// Fabricante da placa que esse encoder usa (None = CPU).
     vendor: Option<u32>,
-    args: fn(fps: u32, mon: Option<&Monitor>) -> Vec<String>,
+    args: fn(c: &Capture, mon: Option<&Monitor>) -> Vec<String>,
 }
 
 /// Fonte de vídeo via Desktop Duplication. Com o monitor conhecido, cria o
 /// dispositivo D3D11 na placa onde ele está ligado; sem isso o ddagrab só
 /// enxerga os monitores da primeira placa (em notebook com duas placas,
 /// a tela do notebook costuma ficar de fora).
-fn dda(fps: u32, download: bool, mon: Option<&Monitor>) -> Vec<String> {
-    let dl = if download { ",hwdownload,format=bgra" } else { "" };
+///
+/// Reduzir a resolução copia o quadro pra memória e redimensiona na CPU
+/// (~7% do processador em 720p): o `scale_d3d11` do FFmpeg ainda não aceita
+/// as texturas do ddagrab.
+fn dda(c: &Capture, download: bool, mon: Option<&Monitor>) -> Vec<String> {
+    let fps = c.fps;
+    let mut chain = String::new();
+    if download || c.scale.is_some() {
+        chain.push_str(",hwdownload,format=bgra");
+    }
+    if let Some((w, h)) = c.scale {
+        chain.push_str(&format!(",scale={w}:{h}:flags=bilinear"));
+    }
     match mon {
         Some(m) => {
             let device = if m.unique_vendor {
@@ -60,7 +112,7 @@ fn dda(fps: u32, download: bool, mon: Option<&Monitor>) -> Vec<String> {
                 "rp".into(),
                 "-filter_complex".into(),
                 format!(
-                    "ddagrab=output_idx={}:framerate={fps}:draw_mouse=1{dl}[v]",
+                    "ddagrab=output_idx={}:framerate={fps}:draw_mouse=1{chain}[v]",
                     m.output
                 ),
                 "-map".into(),
@@ -71,7 +123,7 @@ fn dda(fps: u32, download: bool, mon: Option<&Monitor>) -> Vec<String> {
             "-f".into(),
             "lavfi".into(),
             "-i".into(),
-            format!("ddagrab=output_idx=0:framerate={fps}:draw_mouse=1{dl}"),
+            format!("ddagrab=output_idx=0:framerate={fps}:draw_mouse=1{chain}"),
         ],
     }
 }
@@ -82,79 +134,61 @@ fn s(v: &[&str]) -> Vec<String> {
 
 /// Ordem padrão: placa de vídeo primeiro, CPU por último. Na hora de gravar,
 /// o encoder da placa onde o monitor está ligado vai pra frente da fila.
+///
+/// Níveis de qualidade em cada encoder (Leve, Normal, Alta, Máxima): número
+/// menor = mais qualidade e arquivo maior. Todos em qualidade constante, sem
+/// limite de bitrate.
 const PROFILES: &[Profile] = &[
     Profile {
         name: "NVIDIA (NVENC)",
         vendor: Some(NVIDIA),
-        args: |fps, mon| {
-            let mut a = dda(fps, false, mon);
-            a.extend(s(&[
-                "-c:v",
-                "h264_nvenc",
-                "-preset",
-                "p4",
-                "-rc",
-                "vbr",
-                "-cq",
-                "23",
-                "-b:v",
-                "0",
-            ]));
+        args: |c, mon| {
+            let mut a = dda(c, false, mon);
+            a.extend(s(&["-c:v", "h264_nvenc", "-preset", "p4", "-rc", "vbr", "-cq"]));
+            a.push(c.q([28, 23, 20, 16]));
+            a.extend(s(&["-b:v", "0"]));
             a
         },
     },
     Profile {
         name: "AMD (AMF)",
         vendor: Some(AMD),
-        args: |fps, mon| {
-            let mut a = dda(fps, false, mon);
-            a.extend(s(&[
-                "-c:v", "h264_amf", "-quality", "speed", "-rc", "cqp", "-qp_i", "22", "-qp_p", "24",
-            ]));
+        args: |c, mon| {
+            let mut a = dda(c, false, mon);
+            a.extend(s(&["-c:v", "h264_amf", "-quality", "speed", "-rc", "cqp", "-qp_i"]));
+            a.push(c.q([28, 22, 19, 16]));
+            a.push("-qp_p".into());
+            a.push(c.q([30, 24, 21, 18]));
             a
         },
     },
     Profile {
         name: "Intel (QuickSync)",
         vendor: Some(INTEL),
-        args: |fps, mon| {
-            let mut a = dda(fps, true, mon);
-            a.extend(s(&[
-                "-c:v",
-                "h264_qsv",
-                "-preset",
-                "veryfast",
-                "-global_quality",
-                "24",
-                "-pix_fmt",
-                "nv12",
-            ]));
+        args: |c, mon| {
+            let mut a = dda(c, true, mon);
+            a.extend(s(&["-c:v", "h264_qsv", "-preset", "veryfast", "-global_quality"]));
+            a.push(c.q([30, 24, 21, 18]));
+            a.extend(s(&["-pix_fmt", "nv12"]));
             a
         },
     },
     Profile {
         name: "CPU (x264)",
         vendor: None,
-        args: |fps, mon| {
-            let mut a = dda(fps, true, mon);
-            a.extend(s(&[
-                "-c:v",
-                "libx264",
-                "-preset",
-                "ultrafast",
-                "-crf",
-                "23",
-                "-pix_fmt",
-                "yuv420p",
-            ]));
+        args: |c, mon| {
+            let mut a = dda(c, true, mon);
+            a.extend(s(&["-c:v", "libx264", "-preset", "ultrafast", "-crf"]));
+            a.push(c.q([28, 23, 20, 17]));
+            a.extend(s(&["-pix_fmt", "yuv420p"]));
             a
         },
     },
     Profile {
         name: "CPU (x264, GDI)",
         vendor: None,
-        args: |fps, mon| {
-            let fps = fps.min(30).to_string();
+        args: |c, mon| {
+            let fps = c.fps.min(30).to_string();
             let mut a = s(&["-f", "gdigrab", "-framerate", &fps]);
             if let Some(m) = mon {
                 a.extend([
@@ -166,18 +200,13 @@ const PROFILES: &[Profile] = &[
                     format!("{}x{}", m.width, m.height),
                 ]);
             }
-            a.extend(s(&[
-                "-i",
-                "desktop",
-                "-c:v",
-                "libx264",
-                "-preset",
-                "ultrafast",
-                "-crf",
-                "23",
-                "-pix_fmt",
-                "yuv420p",
-            ]));
+            a.extend(s(&["-i", "desktop"]));
+            if let Some((w, h)) = c.scale {
+                a.extend(["-vf".into(), format!("scale={w}:{h}")]);
+            }
+            a.extend(s(&["-c:v", "libx264", "-preset", "ultrafast", "-crf"]));
+            a.push(c.q([28, 23, 20, 17]));
+            a.extend(s(&["-pix_fmt", "yuv420p"]));
             a
         },
     },
@@ -231,14 +260,15 @@ fn spawn_profile(
     mon: Option<&Monitor>,
 ) -> Result<Running, String> {
     let cfg = shared.config();
+    let capture = Capture::resolve(&cfg, mon);
     let dir = &shared.paths.buffer_dir;
     clean_dir(dir);
     let wrap = cfg.seconds / SEGMENT_SECS + 6;
-    let gop = (cfg.fps * SEGMENT_SECS).to_string();
+    let gop = (capture.fps * SEGMENT_SECS).to_string();
 
     let mut cmd = hidden_command(&shared.paths.ffmpeg);
     cmd.args(["-hide_banner", "-loglevel", "error", "-y"]);
-    cmd.args((profile.args)(cfg.fps, mon));
+    cmd.args((profile.args)(&capture, mon));
     cmd.args(["-g", &gop, "-an"]);
     cmd.args([
         "-f",
@@ -346,10 +376,14 @@ pub fn start(shared: Arc<Shared>) {
                                 .as_ref()
                                 .map(|m| format!("{} · ", m.label))
                                 .unwrap_or_default();
-                            let encoder = PROFILES[order[pos]].name;
+                            let capture = Capture::resolve(&cfg, monitor.as_ref());
+                            let mut encoder = PROFILES[order[pos]].name.to_string();
+                            if let Some((w, h)) = capture.scale {
+                                encoder = format!("{encoder} · {w}×{h}");
+                            }
                             shared.set_status(
                                 Health::Recording,
-                                fill(t().recording, &[&tela, &encoder, &cfg.fps, &cfg.seconds]),
+                                fill(t().recording, &[&tela, &encoder, &capture.fps, &cfg.seconds]),
                             );
                         }
                         None => {
@@ -480,20 +514,26 @@ fn run_ffmpeg(shared: &Shared, args: &[&str]) -> Result<(), String> {
     }
 }
 
+/// Duração do arquivo, lida do `Duration: 00:00:30.02` que o ffmpeg imprime
+/// ao abrir um arquivo (assim não precisa do ffprobe junto).
 fn probe_duration(shared: &Shared, file: &Path) -> Option<f64> {
-    let out = hidden_command(&shared.paths.ffprobe)
-        .args([
-            "-v",
-            "error",
-            "-show_entries",
-            "format=duration",
-            "-of",
-            "csv=p=0",
-        ])
+    let out = hidden_command(&shared.paths.ffmpeg)
+        .args(["-hide_banner", "-i"])
         .arg(file)
+        .stdin(Stdio::null())
         .output()
         .ok()?;
-    String::from_utf8_lossy(&out.stdout).trim().parse().ok()
+    parse_duration(&String::from_utf8_lossy(&out.stderr))
+}
+
+fn parse_duration(ffmpeg_output: &str) -> Option<f64> {
+    let rest = ffmpeg_output.split("Duration: ").nth(1)?;
+    let hms = rest.split(',').next()?.trim();
+    let mut parts = hms.split(':');
+    let h: f64 = parts.next()?.parse().ok()?;
+    let m: f64 = parts.next()?.parse().ok()?;
+    let s: f64 = parts.next()?.parse().ok()?;
+    Some(h * 3600.0 + m * 60.0 + s)
 }
 
 fn p(path: &Path) -> String {
@@ -673,6 +713,7 @@ mod tests {
             y: 0,
             width: 1920,
             height: 1080,
+            refresh: 144,
         }
     }
 
@@ -691,14 +732,72 @@ mod tests {
         assert_eq!(o[0], "NVIDIA (NVENC)");
     }
 
+    fn cap(fps: u32, scale: Option<(u32, u32)>) -> Capture {
+        Capture {
+            fps,
+            scale,
+            quality: Quality::High,
+        }
+    }
+
     #[test]
     fn dda_picks_the_gpu_by_vendor() {
-        let a = dda(60, false, Some(&mon(INTEL)));
+        let a = dda(&cap(60, None), false, Some(&mon(INTEL)));
         assert!(a.contains(&"d3d11va=rp:,vendor_id=0x8086".to_string()));
         assert!(a.contains(&"ddagrab=output_idx=0:framerate=60:draw_mouse=1[v]".to_string()));
         let mut m = mon(NVIDIA);
         m.unique_vendor = false;
-        assert!(dda(30, true, Some(&m)).contains(&"d3d11va=rp:1".to_string()));
+        assert!(dda(&cap(30, None), true, Some(&m)).contains(&"d3d11va=rp:1".to_string()));
+    }
+
+    #[test]
+    fn reducing_resolution_scales_after_download() {
+        let a = dda(&cap(60, Some((1280, 720))), false, Some(&mon(NVIDIA)));
+        assert!(a.contains(
+            &"ddagrab=output_idx=0:framerate=60:draw_mouse=1,hwdownload,format=bgra,scale=1280:720:flags=bilinear[v]"
+                .to_string()
+        ));
+    }
+
+    #[test]
+    fn native_follows_the_monitor_and_never_goes_above_it() {
+        let m = Monitor {
+            width: 2560,
+            height: 1080,
+            refresh: 74,
+            ..mon(NVIDIA)
+        };
+        let mut cfg = Config::default();
+        // Padrão: tudo nativo.
+        assert_eq!(Capture::resolve(&cfg, Some(&m)), cap(74, None));
+        // Pediu 144 num monitor de 74 Hz: fica em 74.
+        cfg.frame_rate = 144;
+        assert_eq!(Capture::resolve(&cfg, Some(&m)).fps, 74);
+        cfg.frame_rate = 30;
+        assert_eq!(Capture::resolve(&cfg, Some(&m)).fps, 30);
+        // 720p num ultrawide mantém a proporção, com largura par.
+        cfg.resolution = 720;
+        assert_eq!(Capture::resolve(&cfg, Some(&m)).scale, Some((1706, 720)));
+        // "Reduzir" pra 1440p num monitor de 1080: fica nativo.
+        cfg.resolution = 1440;
+        assert_eq!(Capture::resolve(&cfg, Some(&m)).scale, None);
+    }
+
+    #[test]
+    fn reads_duration_from_ffmpeg_output() {
+        let out = "Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'video.mp4':\n  Duration: 00:01:02.50, start: 0.000000, bitrate: 9000 kb/s\n";
+        assert_eq!(parse_duration(out), Some(62.5));
+        assert_eq!(parse_duration("Duration: N/A, bitrate: N/A"), None);
+        assert_eq!(parse_duration("nada aqui"), None);
+    }
+
+    #[test]
+    fn quality_levels_reach_the_encoder() {
+        let mut c = cap(60, None);
+        c.quality = Quality::Light;
+        assert!((PROFILES[0].args)(&c, None).contains(&"28".to_string()));
+        c.quality = Quality::Max;
+        assert!((PROFILES[0].args)(&c, None).contains(&"16".to_string()));
     }
 
     #[test]
