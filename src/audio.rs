@@ -189,13 +189,18 @@ pub fn start(ring: Arc<AudioRing>, source: Source) {
     std::thread::Builder::new()
         .name(format!("audio-{}", source.label()))
         .spawn(move || {
+            // Tenta de novo a cada 2s: anota só quando o erro muda, senão enche o diário.
+            let mut last_err = String::new();
             loop {
                 if !ring.enabled.load(Ordering::Relaxed) {
                     std::thread::sleep(Duration::from_millis(500));
                     continue;
                 }
                 if let Err(e) = run_once(&ring, source) {
-                    eprintln!("{}: {e}", source.label());
+                    if e != last_err {
+                        crate::platform::log(&format!("áudio ({}): {e}", source.label()));
+                        last_err = e;
+                    }
                 }
                 std::thread::sleep(Duration::from_secs(2));
             }
@@ -221,6 +226,18 @@ fn run_once(ring: &Arc<AudioRing>, source: Source) -> Result<(), String> {
     .map_err(|e| e.to_string())?;
     let config = supported.config();
     ring.reset_format(config.sample_rate, config.channels);
+    // Som tocando em outro dispositivo não entra no clipe: o diário mostra qual é o capturado.
+    let name = device
+        .description()
+        .map(|d| d.name().to_string())
+        .unwrap_or_else(|_| "?".into());
+    crate::platform::log(&format!(
+        "áudio ({}): capturando \"{name}\", {} Hz, {} canais, {:?}",
+        source.label(),
+        config.sample_rate,
+        config.channels,
+        supported.sample_format()
+    ));
 
     let failed = Arc::new(AtomicBool::new(false));
     let stream = match supported.sample_format() {
@@ -271,7 +288,7 @@ where
                 ring.push(data.iter().map(|s| s.to_sample::<f32>()).collect());
             },
             move |err| {
-                eprintln!("stream de áudio: {err}");
+                crate::platform::log(&format!("áudio: a captura caiu: {err}"));
                 failed.store(true, Ordering::Relaxed);
             },
             None,

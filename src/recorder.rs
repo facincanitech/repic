@@ -673,7 +673,11 @@ fn save_clip(shared: &Shared, pressed: SystemTime) -> Result<PathBuf, String> {
         ] {
             if on {
                 let wav = work.join(name);
-                audio::write_wav(&wav, &ring.render(start, duration))?;
+                let rendered = ring.render(start, duration);
+                // Distingue "clipe mudo" de "som baixo" sem precisar do arquivo.
+                let peak = rendered.samples.iter().fold(0f32, |m, s| m.max(s.abs()));
+                platform::log(&format!("clipe: áudio {name}, pico {peak:.4}"));
+                audio::write_wav(&wav, &rendered)?;
                 wavs.push(p(&wav));
             }
         }
