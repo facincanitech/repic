@@ -1,0 +1,13 @@
+{
+  "appId": "com.facincanitech.repic",
+  "appName": "RePic",
+  "webDir": "docs/app",
+  "server": {
+    "url": "https://facincanitech.github.io/repic/app/",
+    "cleartext": false,
+    "errorPath": "index.html",
+    "allowNavigation": [
+      "localhost"
+    ]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "repic-android",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pacote Android do RePic (Capacitor). A interface fica em docs/app.",
+  "scripts": {
+    "sync": "cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/core": "^8.5.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.0"
+  }
+}

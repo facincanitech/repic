@@ -1,2 +1,13 @@
 /target
 /dist
+/node_modules
+/android/keystore.properties
+/android/*.jks
+/android/local.properties
+/android/.gradle
+/android/build
+/android/app/build
+/android/capacitor-cordova-android-plugins
+/android/app/src/main/assets/public
+/android/app/src/main/assets/capacitor.config.json
+/android/app/src/main/assets/capacitor.plugins.json

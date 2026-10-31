@@ -1,0 +1,20 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="channel_name">Gravação</string>
+    <string name="recording_loop">Gravando em loop</string>
+    <string name="clip">RePic</string>
+    <string name="clip_hint">salva o que já passou</string>
+    <string name="record">Gravar</string>
+    <string name="record_hint">daqui pra frente</string>
+    <string name="stop">Parar</string>
+    <string name="clipping">Clipando…</string>
+    <string name="clip_saved">Clipe salvo</string>
+    <string name="recording">Gravando</string>
+    <string name="saving">Salvando…</string>
+    <string name="saving_recording">Salvando gravação…</string>
+    <string name="recording_saved">Gravação salva</string>
+    <string name="save_failed">Não deu pra salvar</string>
+    <string name="capture_failed">Não deu pra começar a gravar</string>
+    <string name="limit_reached">Chegou no limite: salvando gravação</string>
+    <string name="disk_full">Armazenamento quase cheio: gravação encerrada</string>
+</resources>

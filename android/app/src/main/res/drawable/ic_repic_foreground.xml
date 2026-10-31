@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A mesma bolinha de REC do RePic no Windows. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#F5F5F5" android:pathData="M54,27a27,27 0 1,0 0,54a27,27 0 1,0 0,-54z" />
+    <path android:fillColor="#18181C" android:pathData="M54,31.5a22.5,22.5 0 1,0 0,45a22.5,22.5 0 1,0 0,-45z" />
+    <path android:fillColor="#EB4040" android:pathData="M54,37a17,17 0 1,0 0,34a17,17 0 1,0 0,-34z" />
+</vector>
