@@ -99,6 +99,15 @@
 
   /* Seções */
   section { padding: 72px 0; }
+  .pf { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .pf-card { background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 28px; }
+  .pf-future { border-color: rgba(235,64,64,.55); background: linear-gradient(160deg, rgba(235,64,64,.12), var(--bg-2) 60%); }
+  .pf-top { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+  .key-sm { font-weight: 800; font-size: 20px; padding: 4px 12px; border-radius: 8px; background: var(--card-2); border: 1px solid #3a3a45; border-bottom-width: 3px; }
+  .pf-tag { color: var(--muted); font-size: 14px; font-weight: 600; }
+  .pf-card h3 { margin: 0 0 8px; font-size: 26px; letter-spacing: -0.02em; }
+  .pf-card p { margin: 0; color: var(--muted); }
+  @media (max-width: 680px) { .pf { grid-template-columns: minmax(0, 1fr); } }
   h2 { font-size: clamp(26px, 4vw, 36px); letter-spacing: -0.02em; margin: 0 0 10px; text-align: center; }
   .sub { text-align: center; color: var(--muted); margin: 0 auto 40px; max-width: 560px; }
   .feats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
@@ -190,6 +199,25 @@
     </div>
   </div>
 
+  <section id="passado-futuro">
+    <div class="wrap">
+      <h2 data-t="pf_title">Dois botões: passado e futuro</h2>
+      <p class="sub" data-t="pf_sub">Grave o que já aconteceu ou o que ainda vai acontecer.</p>
+      <div class="pf">
+        <div class="pf-card">
+          <div class="pf-top"><span class="key-sm">F8</span><span class="pf-tag" data-t="pf_past_tag">O passado</span></div>
+          <h3 data-t="pf_past_t">Já aconteceu?</h3>
+          <p data-t="pf_past_p">Aperta e salva o que acabou de rolar: de 15 segundos até 2 horas pra trás. A jogada já foi, e mesmo assim está gravada.</p>
+        </div>
+        <div class="pf-card pf-future">
+          <div class="pf-top"><span class="key-sm">F9</span><span class="pf-tag" data-t="pf_future_tag">O futuro</span></div>
+          <h3 data-t="pf_future_t">Vai acontecer?</h3>
+          <p data-t="pf_future_p">Aperta pra começar a gravar, aperta de novo pra parar, como no OBS. Dá pra usar os dois ao mesmo tempo.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section id="recursos">
     <div class="wrap">
       <h2 data-t="f_title">Leve de verdade</h2>
@@ -201,7 +229,7 @@
         <div class="feat"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg></div><h4 data-t="f4_t">Qualquer tecla</h4><p data-t="f4_p">Escolha o atalho que quiser, sozinho ou com Ctrl/Alt/Shift. A tecla continua funcionando no jogo.</p></div>
         <div class="feat"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/></svg></div><h4 data-t="f5_t">Som do PC + microfone</h4><p data-t="f5_p">Grava o que sai nos fones e, se quiser, o seu microfone, tudo sincronizado com o vídeo.</p></div>
         <div class="feat"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div><h4 data-t="f6_t">No nativo do seu monitor</h4><p data-t="f6_p">Grava no FPS e na resolução do monitor (até 240 fps), ou menos, se você preferir. Qualquer monitor, até em notebook com duas placas.</p></div>
-        <div class="feat"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg></div><h4 data-t="f7_t">Passado ou futuro</h4><p data-t="f7_p">Uma tecla salva o que já aconteceu. Outra começa a gravar agora, como no OBS, até você parar.</p></div>
+        <div class="feat"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg></div><h4 data-t="f7_t">Fala a sua língua</h4><p data-t="f7_p">Português, inglês ou espanhol, conforme o idioma do Windows.</p></div>
         <div class="feat"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div><h4 data-t="f8_t">Até 2 horas</h4><p data-t="f8_p">Escolha de 15 segundos a 2 horas de passado. O RePic mostra quanto do disco pode usar antes de você escolher.</p></div>
         <div class="feat"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/></svg></div><h4 data-t="f9_t">Funciona em call</h4><p data-t="f9_p">O som do PC e o microfone continuam gravando mesmo durante uma chamada de voz.</p></div>
       </div>
@@ -270,7 +298,10 @@ const T = {
     f3_t: "Nothing leaves your PC", f3_p: "No login, no account, no cloud, no ads. Clips stay in your Videos folder.",
     f4_t: "Any key", f4_p: "Pick any shortcut, alone or with Ctrl/Alt/Shift. The key still works in your game.",
     f5_t: "PC sound + microphone", f5_p: "Records what plays on your headphones and, if you want, your mic, in sync with the video.",
-    f7_t: "Past or future", f7_p: "One key saves what already happened. Another starts recording now, like OBS, until you stop it.",
+    pf_title: "Two buttons: past and future", pf_sub: "Record what already happened or what's about to happen.",
+    pf_past_tag: "The past", pf_past_t: "Already happened?", pf_past_p: "Press it and save what just went down: from 15 seconds up to 2 hours back. The play is over, and it's still recorded.",
+    pf_future_tag: "The future", pf_future_t: "About to happen?", pf_future_p: "Press to start recording, press again to stop, like OBS. You can use both at the same time.",
+    f7_t: "Speaks your language", f7_p: "Portuguese, English or Spanish, based on your Windows language.",
     f8_t: "Up to 2 hours", f8_p: "Pick from 15 seconds to 2 hours of past. RePic shows how much disk it may use before you choose.",
     f9_t: "Works during calls", f9_p: "PC sound and microphone keep recording even while you're in a voice call.",
     f6_t: "Native to your monitor", f6_p: "Records at your monitor's FPS and resolution (up to 240 fps), or lower if you prefer. Any monitor, even on laptops with two GPUs.",
@@ -301,7 +332,10 @@ const T = {
     f3_t: "Nada sale de tu PC", f3_p: "Sin login, sin cuenta, sin nube, sin anuncios. Los clips quedan en tu carpeta Videos.",
     f4_t: "Cualquier tecla", f4_p: "Elige el atajo que quieras, solo o con Ctrl/Alt/Shift. La tecla sigue funcionando en el juego.",
     f5_t: "Sonido del PC + micrófono", f5_p: "Graba lo que suena en tus auriculares y, si quieres, tu micrófono, sincronizado con el video.",
-    f7_t: "Pasado o futuro", f7_p: "Una tecla guarda lo que ya pasó. Otra empieza a grabar ahora, como OBS, hasta que la pares.",
+    pf_title: "Dos botones: pasado y futuro", pf_sub: "Graba lo que ya pasó o lo que está por pasar.",
+    pf_past_tag: "El pasado", pf_past_t: "¿Ya pasó?", pf_past_p: "Púlsalo y guarda lo que acaba de ocurrir: de 15 segundos hasta 2 horas atrás. La jugada ya terminó, y aun así está grabada.",
+    pf_future_tag: "El futuro", pf_future_t: "¿Está por pasar?", pf_future_p: "Púlsalo para empezar a grabar y otra vez para parar, como OBS. Puedes usar los dos al mismo tiempo.",
+    f7_t: "Habla tu idioma", f7_p: "Portugués, inglés o español, según el idioma de Windows.",
     f8_t: "Hasta 2 horas", f8_p: "Elige de 15 segundos a 2 horas de pasado. RePic muestra cuánto disco puede usar antes de que elijas.",
     f9_t: "Funciona en llamadas", f9_p: "El sonido del PC y el micrófono siguen grabando incluso en una llamada de voz.",
     f6_t: "Nativo de tu monitor", f6_p: "Graba a los FPS y la resolución de tu monitor (hasta 240 fps), o menos si prefieres. Cualquier monitor, incluso en portátiles con dos gráficas.",
