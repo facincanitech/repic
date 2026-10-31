@@ -11,6 +11,8 @@ Sem login, sem conta, sem upload, sem overlay. Só um `.exe` leve na bandeja.
 2. Abra o RePic pelo Menu Iniciar. O Windows pede pra rodar como administrador: aceite (é o que deixa o atalho funcionar em jogos que rodam como admin).
 3. Jogue. Aconteceu algo épico? **F8**. Apareceu "Clipe gravado ✓" no canto? Tá salvo em `Vídeos\RePic`.
 
+No Android (10 ou mais novo), baixe o **[RePic.apk](https://github.com/facincanitech/repic/releases/download/android-v0.5.0/RePic.apk)** e toque em **Iniciar**: uma bolinha fica por cima dos outros apps. Tocando nela, **RePic** salva o que já passou e **Gravar** grava daqui pra frente.
+
 Pra desinstalar: Configurações do Windows → Aplicativos → RePic (clipes e configurações ficam).
 
 A janela mostra os **últimos clipes** em grade: clique na miniatura pra assistir,

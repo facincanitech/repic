@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>RePic — aperta F8, vira clipe</title>
-<meta name="description" content="Clipador leve pra Windows: aperta F8 e os últimos 30 segundos da tela viram um clipe. Grátis, sem conta, sem upload.">
+<meta name="description" content="Clipador leve pra Windows e Android: aperta F8 e os últimos 30 segundos da tela viram um clipe. Grátis, sem conta, sem upload.">
 <meta property="og:title" content="RePic — aperta F8, vira clipe">
-<meta property="og:description" content="Clipador leve pra Windows. Grátis, sem conta, sem upload.">
+<meta property="og:description" content="Clipador leve pra Windows e Android. Grátis, sem conta, sem upload.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23f5f5f5'/%3E%3Ccircle cx='16' cy='16' r='12.5' fill='%2318181c'/%3E%3Ccircle cx='16' cy='16' r='9' fill='%23eb4040'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -59,6 +59,9 @@
   .cta { display: inline-flex; align-items: center; gap: 10px; background: var(--accent); color: #fff; text-decoration: none; font-weight: 700; font-size: 18px; padding: 15px 28px; border-radius: 12px; box-shadow: 0 10px 30px rgba(235,64,64,.25); transition: transform .12s, background .12s; }
   .cta:hover { background: var(--accent-2); transform: translateY(-1px); }
   .cta svg { width: 20px; height: 20px; }
+  .cta.alt { background: transparent; color: var(--text); box-shadow: inset 0 0 0 2px var(--accent); margin-left: 8px; }
+  .cta.alt:hover { background: var(--accent); color: #fff; }
+  @media (max-width: 560px) { .cta { width: 100%; justify-content: center; } .cta.alt { margin: 10px 0 0; } }
   .meta { margin-top: 14px; font-size: 14px; color: var(--muted); }
   .meta span + span::before { content: "·"; margin: 0 8px; opacity: .6; }
 
@@ -180,7 +183,12 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14"/></svg>
       <span data-t="cta">Baixar pra Windows</span>
     </a>
-    <div class="meta"><span data-t="free">Grátis</span><span>Windows 10 / 11</span><span class="ver">~30 MB</span></div>
+    <a class="cta alt" href="https://github.com/facincanitech/repic/releases/download/android-v0.5.0/RePic.apk">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14"/></svg>
+      <span data-t="cta_apk">Baixar pra Android</span>
+    </a>
+    <div class="meta"><span data-t="free">Grátis</span><span>Windows 10 / 11</span><span class="ver">~30 MB</span><span>Android 10+ · 7 MB</span></div>
+    <p class="meta" data-t="apk_note">No Android, toque em Iniciar e uma bolinha fica por cima dos outros apps: ela faz o papel do atalho. O celular pede pra permitir a instalação do APK.</p>
 
     <div class="shot" aria-hidden="true">
       <div class="titlebar"><span class="dot" style="width:10px;height:10px;box-shadow:0 0 0 2px #18181c,0 0 0 3px #f5f5f5"></span>RePic<div class="ctrls"><span>—</span><span>☐</span><span>✕</span></div></div>
@@ -270,6 +278,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14"/></svg>
         <span data-t="cta">Baixar pra Windows</span>
       </a>
+      <a class="cta alt" href="https://github.com/facincanitech/repic/releases/download/android-v0.5.0/RePic.apk">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 20h14"/></svg>
+        <span data-t="cta_apk">Baixar pra Android</span>
+      </a>
     </div>
   </div>
 </main>
@@ -288,7 +300,7 @@ const T = {
     nav_features: "Features", nav_faq: "FAQ",
     h1_a: "Press", h1_b: "Get a clip.",
     lead: "RePic keeps recording your screen in a loop. Something epic happened? Hit the shortcut and the last 30 seconds become a video. No account, no upload, no FPS hit.",
-    cta: "Download for Windows", free: "Free",
+    cta: "Download for Windows", cta_apk: "Download for Android", apk_note: "On Android, tap Start and a bubble stays over your other apps: it does the job of the hotkey. Your phone asks you to allow installing the APK.", free: "Free",
     m_record: "Record · F9", m_clip: "RePic · F8", m_status: "Recording in a loop · Monitor 1 · 2560×1080 (main) · NVIDIA (NVENC) · 60 fps · last 30s",
     m_saved: "Clip saved: RePic_2026-10-16_21-42-07.mp4", m_recent: "Recent clips", m_open: "Open folder",
     m_folder: "Folder", m_export: "Export", m_delete: "Delete",
@@ -322,7 +334,7 @@ const T = {
     nav_features: "Funciones", nav_faq: "Preguntas",
     h1_a: "Pulsa", h1_b: "Ya es clip.",
     lead: "RePic graba tu pantalla en bucle. ¿Pasó algo épico? Pulsa el atajo y los últimos 30 segundos se convierten en un video. Sin cuenta, sin subir nada, sin bajar los FPS.",
-    cta: "Descargar para Windows", free: "Gratis",
+    cta: "Descargar para Windows", cta_apk: "Descargar para Android", apk_note: "En Android, toca Iniciar y una burbuja queda sobre las otras apps: hace el papel del atajo. El teléfono pide permitir la instalación del APK.", free: "Gratis",
     m_record: "Grabar · F9", m_clip: "RePic · F8", m_status: "Grabando en bucle · Monitor 1 · 2560×1080 (principal) · NVIDIA (NVENC) · 60 fps · últimos 30s",
     m_saved: "Clip guardado: RePic_2026-10-16_21-42-07.mp4", m_recent: "Clips recientes", m_open: "Abrir carpeta",
     m_folder: "Carpeta", m_export: "Exportar", m_delete: "Eliminar",
