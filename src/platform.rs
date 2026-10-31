@@ -503,11 +503,17 @@ mod imp {
             InvalidateRect(hwnd, std::ptr::null(), 1);
             // "Salvando…" fica até chegar o resultado (com um limite).
             let ms = match kind {
+                // Some logo se a gravação parar de atualizar.
+                Toast::Live => 5_000,
                 Toast::Busy => 30_000,
                 Toast::Ok => 3_000,
                 Toast::Error => 5_000,
             };
             SetTimer(hwnd, TOAST_TIMER, ms, None);
+
+            if matches!(kind, Toast::Live) {
+                return;
+            }
 
             // 3 = jogo em tela cheia exclusiva: aí nada aparece por cima.
             let mut state = 0;
@@ -541,6 +547,7 @@ mod imp {
             FillRect(dc, &r, bg);
             DeleteObject(bg);
             let accent = match kind {
+                Toast::Live => rgb(235, 64, 64),
                 Toast::Busy => rgb(150, 150, 160),
                 Toast::Ok => rgb(70, 200, 120),
                 Toast::Error => rgb(235, 64, 64),
@@ -965,6 +972,8 @@ pub use imp::{
 /// Cor do aviso na tela.
 #[derive(Clone, Copy)]
 pub enum Toast {
+    /// Medidor da gravação: atualiza toda hora, por isso não vai pro diário.
+    Live,
     /// Salvando: fica na tela até o resultado.
     Busy,
     Ok,

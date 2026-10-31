@@ -8,7 +8,7 @@
 //! - No atalho, juntamos os últimos pedaços prontos sem reprocessar (`-c copy`),
 //!   colamos o áudio (PC + microfone) da mesma janela de tempo e pronto.
 
-use crate::config::{Config, Quality, fit_resolution, format_duration};
+use crate::config::{Config, Quality, fit_resolution, format_duration, format_size};
 use crate::lang::{fill, t};
 use crate::platform::{self, Monitor, Toast, hidden_command};
 use crate::state::{Health, RecCmd, Shared};
@@ -449,9 +449,17 @@ pub fn hotkey_pressed(shared: Arc<Shared>) {
 /// Aviso no canto da tela. Com o aviso desligado (ou se ele não abrir),
 /// avisa só com o som.
 pub fn notify(shared: &Shared, text: &str, kind: Toast) {
+    let hold_secs = match kind {
+        Toast::Ok => 3,
+        Toast::Error => 5,
+        Toast::Busy | Toast::Live => 0,
+    };
+    if hold_secs > 0 {
+        *shared.toast_until.lock().unwrap() = Some(Instant::now() + Duration::from_secs(hold_secs));
+    }
     if !(shared.config().notify && platform::toast(text, kind)) {
         match kind {
-            Toast::Busy => {}
+            Toast::Busy | Toast::Live => {}
             Toast::Ok => platform::beep_ok(),
             Toast::Error => platform::beep_error(),
         }
@@ -683,6 +691,7 @@ pub fn toggle_recording(shared: Arc<Shared>) {
         return;
     }
     shared.rec_stop.store(false, Ordering::SeqCst);
+    shared.rec_bytes.store(0, Ordering::SeqCst);
     *shared.rec_started.lock().unwrap() = Some(Instant::now());
     // O som guardado não pode vencer enquanto a gravação durar.
     shared.audio.set_hold(true);
@@ -739,6 +748,25 @@ struct Recorded {
     files: Vec<PathBuf>,
     last_end: Option<SystemTime>,
     bytes: u64,
+    /// Tamanho do último pedaço, pra prever o próximo.
+    last_size: u64,
+}
+
+/// Tamanho que o MP4 final deve ter: o vídeo mais o som a 192 kbps.
+fn estimated_size(video_bytes: u64, segments: usize, has_audio: bool) -> u64 {
+    const AUDIO_BYTES_PER_SEC: u64 = 24_000;
+    let audio = if has_audio {
+        segments as u64 * SEGMENT_SECS as u64 * AUDIO_BYTES_PER_SEC
+    } else {
+        0
+    };
+    video_bytes + audio
+}
+
+/// Hora de parar pra não passar do limite? Parar ainda inclui o pedaço em
+/// andamento e pode pegar mais um, por isso a margem de dois pedaços.
+fn reaches_limit(estimate: u64, last_size: u64, limit_mb: u32) -> bool {
+    limit_mb > 0 && estimate + 2 * last_size >= limit_mb as u64 * 1_000_000
 }
 
 /// Copia os pedaços que fecharam depois do começo da gravação. O buffer vai
@@ -752,11 +780,53 @@ fn collect_segments(shared: &Shared, started: SystemTime, rec: &mut Recorded) ->
             .paths
             .record_dir
             .join(format!("rec_{:06}.ts", rec.files.len()));
-        rec.bytes += std::fs::copy(&seg, &copy).map_err(|e| e.to_string())?;
+        rec.last_size = std::fs::copy(&seg, &copy).map_err(|e| e.to_string())?;
+        rec.bytes += rec.last_size;
         rec.files.push(copy);
         rec.last_end = Some(end);
     }
+    let cfg = shared.config();
+    let estimate = estimated_size(rec.bytes, rec.files.len(), cfg.audio || cfg.mic);
+    shared.rec_bytes.store(estimate, Ordering::SeqCst);
     Ok(())
+}
+
+/// Texto do medidor: "Gravando · 03:20 · 412 MB / 1.0 GB".
+fn meter_text(label: &str, secs: u64, bytes: u64, limit_mb: u32) -> String {
+    let clock = format!("{:02}:{:02}", secs / 60, secs % 60);
+    let size = format_size(bytes);
+    match limit_mb {
+        0 => format!("{label} · {clock} · {size}"),
+        limit => {
+            let limit = format_size(limit as u64 * 1_000_000);
+            format!("{label} · {clock} · {size} / {limit}")
+        }
+    }
+}
+
+/// Atualiza o medidor na tela, sem passar por cima de outro aviso.
+fn show_meter(shared: &Shared) {
+    let busy = shared.saving.load(Ordering::SeqCst)
+        || shared
+            .toast_until
+            .lock()
+            .unwrap()
+            .is_some_and(|until| Instant::now() < until);
+    if busy {
+        return;
+    }
+    let secs = shared
+        .rec_started
+        .lock()
+        .unwrap()
+        .map_or(0, |at| at.elapsed().as_secs());
+    let text = meter_text(
+        t().toast_rec_started,
+        secs,
+        shared.rec_bytes.load(Ordering::SeqCst),
+        shared.config().record_limit_mb,
+    );
+    notify(shared, &text, Toast::Live);
 }
 
 /// Disco quase cheio? Precisa sobrar pro que falta: montar o vídeo e o som.
@@ -770,6 +840,7 @@ fn record(shared: &Shared, started: SystemTime) -> Result<PathBuf, String> {
     clean_dir(dir);
     let mut rec = Recorded::default();
     let mut last_disk_check = Instant::now();
+    let mut last_meter = Instant::now();
     loop {
         if let Err(e) = collect_segments(shared, started, &mut rec) {
             // Disco cheio, por exemplo: salva o que já tem.
@@ -777,6 +848,14 @@ fn record(shared: &Shared, started: SystemTime) -> Result<PathBuf, String> {
             break;
         }
         if shared.rec_stop.load(Ordering::SeqCst) {
+            break;
+        }
+        let estimate = shared.rec_bytes.load(Ordering::SeqCst);
+        if reaches_limit(estimate, rec.last_size, shared.config().record_limit_mb) {
+            platform::log("gravação: chegou no limite de tamanho, parando");
+            shared.rec_stop.store(true, Ordering::SeqCst);
+            notify(shared, t().toast_rec_limit, Toast::Busy);
+            shared.set_event(true, t().toast_rec_limit);
             break;
         }
         if last_disk_check.elapsed() >= Duration::from_secs(5) {
@@ -787,6 +866,10 @@ fn record(shared: &Shared, started: SystemTime) -> Result<PathBuf, String> {
                 notify(shared, t().rec_disk_full, Toast::Busy);
                 break;
             }
+        }
+        if last_meter.elapsed() >= Duration::from_secs(1) {
+            last_meter = Instant::now();
+            show_meter(shared);
         }
         std::thread::sleep(Duration::from_millis(300));
     }
@@ -1049,6 +1132,85 @@ mod tests {
         // 5 GB gravados precisam de mais 10 GB pra montar, fora a folga.
         assert!(disk_nearly_full(11 * GB, 5 * GB));
         assert!(disk_nearly_full(GB, 0));
+    }
+
+    #[test]
+    fn stops_before_passing_the_size_limit() {
+        const MB: u64 = 1_000_000;
+        assert!(!reaches_limit(900 * MB, 4 * MB, 0)); // sem limite
+        assert!(!reaches_limit(900 * MB, 4 * MB, 1000));
+        assert!(reaches_limit(993 * MB, 4 * MB, 1000)); // falta menos que 2 pedaços
+        assert!(reaches_limit(1000 * MB, 4 * MB, 1000));
+    }
+
+    #[test]
+    fn meter_shows_time_size_and_limit() {
+        assert_eq!(meter_text("Gravando", 200, 412_000_000, 0), "Gravando · 03:20 · 412 MB");
+        assert_eq!(
+            meter_text("Gravando", 200, 412_000_000, 1000),
+            "Gravando · 03:20 · 412 MB / 1.0 GB"
+        );
+    }
+
+    #[test]
+    fn size_estimate_counts_the_sound() {
+        assert_eq!(estimated_size(1_000_000, 5, false), 1_000_000);
+        // 5 pedaços de 2s a 24 kB/s.
+        assert_eq!(estimated_size(1_000_000, 5, true), 1_240_000);
+    }
+
+    /// Com ffmpeg de verdade: a gravação tem que parar sozinha no limite, sem passar dele.
+    /// `cargo test --release live_record_limit -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn live_record_limit() {
+        let root = std::env::temp_dir().join(format!("repic-limit-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let ffmpeg = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/release/ffmpeg.exe");
+        let out = root.join("clipes");
+        let cfg = Config {
+            notify: false,
+            mic: false,
+            audio: false,
+            record_limit_mb: 5,
+            output_dir: out.clone(),
+            ..Config::default()
+        };
+        let shared = Shared::with_paths(cfg, root.join("tmp"), root.join("app"), ffmpeg.clone());
+        clean_dir(&shared.paths.buffer_dir);
+        let mut source = std::process::Command::new(&ffmpeg)
+            .args(["-hide_banner", "-loglevel", "error", "-re", "-f", "lavfi"])
+            .args(["-i", "testsrc2=s=1280x720:r=30", "-t", "60"])
+            .args(["-c:v", "libx264", "-preset", "ultrafast", "-qp", "18", "-g", "60"])
+            .args(["-f", "segment", "-segment_time", "2", "-segment_wrap", "12"])
+            .args(["-segment_format", "mpegts", "-reset_timestamps", "1"])
+            .arg(shared.paths.buffer_dir.join("seg_%03d.ts"))
+            .spawn()
+            .unwrap();
+        std::thread::sleep(Duration::from_secs(3));
+        toggle_recording(shared.clone());
+        let start = Instant::now();
+        let mut seen = 0;
+        while shared.recording.load(Ordering::SeqCst) && start.elapsed() < Duration::from_secs(50) {
+            seen = seen.max(shared.rec_bytes.load(Ordering::SeqCst));
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        let stopped_alone = !shared.recording.load(Ordering::SeqCst);
+        finish_recording(&shared);
+        let _ = source.kill();
+        let _ = source.wait();
+        let clip = std::fs::read_dir(&out).unwrap().flatten().next().unwrap().path();
+        let size = std::fs::metadata(&clip).unwrap().len();
+        println!(
+            "parou em {:.1}s | medidor {:.2} MB | arquivo {:.2} MB",
+            start.elapsed().as_secs_f64(),
+            seen as f64 / 1e6,
+            size as f64 / 1e6
+        );
+        assert!(stopped_alone, "não parou sozinha");
+        assert!(seen > 0, "o medidor não subiu");
+        assert!(size <= 5_000_000, "passou do limite: {size}");
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// Passa pelo caminho real, com ffmpeg e arquivos de verdade, sem capturar

@@ -2,7 +2,8 @@
 //! e as configurações num modal.
 
 use crate::config::{
-    FPS_OPTIONS, MAX_SECONDS, Quality, RES_OPTIONS, UNITS, best_unit, duration_from_input,
+    FPS_OPTIONS, MAX_SECONDS, Quality, RES_OPTIONS, UNITS, best_unit, duration_from_input, format_size,
+    record_limit_from_input,
     fit_resolution,
     format_duration,
 };
@@ -80,6 +81,9 @@ pub struct ClipApp {
     /// O que está no campo de duração, e a unidade dele em segundos.
     duration_text: String,
     duration_unit: u32,
+    /// O que está no campo de limite da gravação, e a unidade (1 = MB, 1000 = GB).
+    limit_text: String,
+    limit_unit: u32,
     /// Quando reiniciar a gravação por causa de uma configuração nova.
     restart_at: Option<Instant>,
     /// Aberto com --tray: quadros que faltam pra esconder a janela (o eframe
@@ -105,6 +109,8 @@ impl ClipApp {
             max_seconds: MAX_SECONDS,
             duration_text: String::new(),
             duration_unit: 1,
+            limit_text: String::new(),
+            limit_unit: 1,
             restart_at: None,
         }
     }
@@ -256,7 +262,8 @@ impl ClipApp {
                         .unwrap()
                         .map_or(0, |at| at.elapsed().as_secs());
                     let clock = format!("{:02}:{:02}", secs / 60, secs % 60);
-                    (format!("{}  ·  {clock}", t().stop_btn), ACCENT)
+                    let size = format_size(self.shared.rec_bytes.load(Ordering::SeqCst));
+                    (format!("{}  ·  {clock}  ·  {size}", t().stop_btn), ACCENT)
                 } else {
                     let key = hotkey::label(&cfg.record_shortcut);
                     (format!("{}  ·  {key}", t().record_btn), Color32::from_gray(60))
@@ -419,6 +426,16 @@ impl ClipApp {
         self.duration_text = (seconds / self.duration_unit).to_string();
     }
 
+    /// Põe o limite no campo: 2000 MB aparece como 2 GB, e 0 como vazio.
+    fn show_limit(&mut self, limit_mb: u32) {
+        if limit_mb == 0 {
+            self.limit_text.clear();
+            return;
+        }
+        self.limit_unit = if limit_mb % 1000 == 0 { 1000 } else { 1 };
+        self.limit_text = (limit_mb / self.limit_unit).to_string();
+    }
+
     fn open_settings(&mut self) {
         // Ao abrir, sempre a forma mais simples: 7200 aparece como 2 horas.
         self.duration_text.clear();
@@ -430,6 +447,7 @@ impl ClipApp {
             .map(|free| max_seconds_for_disk(free, self.video_rate))
             .unwrap_or(MAX_SECONDS);
         self.show_duration(self.shared.config().seconds);
+        self.show_limit(self.shared.config().record_limit_mb);
         self.settings_open = true;
     }
 
@@ -468,6 +486,7 @@ impl ClipApp {
         let mut autostart = self.autostart;
         let mut change_key: Option<Target> = None;
         let mut commit_duration = false;
+        let mut commit_limit = false;
         let mut pick_dir = false;
         let mut close = false;
 
@@ -622,6 +641,28 @@ impl ClipApp {
                                 }
                             });
                         ui.end_row();
+
+                        ui.label(t().rec_limit);
+                        ui.horizontal(|ui| {
+                            let field = egui::TextEdit::singleline(&mut self.limit_text)
+                                .desired_width(56.0)
+                                .char_limit(7);
+                            let typed = ui.add(field);
+                            self.limit_text.retain(|c| c.is_ascii_digit());
+                            commit_limit |= typed.lost_focus();
+                            let unit_name = |u: u32| if u == 1000 { "GB" } else { "MB" };
+                            let before_unit = self.limit_unit;
+                            egui::ComboBox::from_id_salt("limit_unit")
+                                .selected_text(unit_name(self.limit_unit))
+                                .width(56.0)
+                                .show_ui(ui, |ui| {
+                                    for u in [1, 1000] {
+                                        ui.selectable_value(&mut self.limit_unit, u, unit_name(u));
+                                    }
+                                });
+                            commit_limit |= self.limit_unit != before_unit;
+                        });
+                        ui.end_row();
                     });
                     hint(ui, &fill(t().duration_limit, &[&format_duration(self.max_seconds)]));
                     if cfg.seconds > 120 {
@@ -632,6 +673,7 @@ impl ClipApp {
                         ui.label(RichText::new(t().disk_low).small().color(ACCENT));
                     }
                     hint(ui, t().q_hints[cfg.quality.index()]);
+                    hint(ui, t().rec_limit_hint);
                     let mon = platform::pick_monitor(&self.monitors, &cfg.monitor);
                     if mon.is_some_and(|m| fit_resolution(m.width, m.height, cfg.resolution).is_some()) {
                         hint(ui, t().scale_hint);
@@ -710,6 +752,11 @@ impl ClipApp {
         }
         // A duração só vale ao sair do campo: digitar "120" não pode reiniciar
         // a gravação em 1, 12 e 120.
+        if commit_limit || close {
+            let value = self.limit_text.parse::<u32>().unwrap_or(0);
+            cfg.record_limit_mb = record_limit_from_input(value, self.limit_unit);
+            self.show_limit(cfg.record_limit_mb);
+        }
         if commit_duration || close {
             if let Ok(value) = self.duration_text.parse::<u32>()
                 && value.saturating_mul(self.duration_unit) != cfg.seconds

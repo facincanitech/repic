@@ -3,7 +3,7 @@ use crate::config::{self, Config};
 use crate::hotkey::{Combo, Target};
 use eframe::egui;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
@@ -54,6 +54,10 @@ pub struct Shared {
     pub rec_stop: AtomicBool,
     /// Quando a gravação começou (pra mostrar o tempo).
     pub rec_started: Mutex<Option<Instant>>,
+    /// Tamanho previsto da gravação até agora, pro medidor.
+    pub rec_bytes: AtomicU64,
+    /// Até quando outro aviso fica na tela sem o medidor passar por cima.
+    pub toast_until: Mutex<Option<Instant>>,
     pub history_dirty: AtomicBool,
     pub show_requested: AtomicBool,
     pub hwnd: AtomicIsize,
@@ -103,6 +107,8 @@ impl Shared {
             recording: AtomicBool::new(false),
             rec_stop: AtomicBool::new(false),
             rec_started: Mutex::new(None),
+            rec_bytes: AtomicU64::new(0),
+            toast_until: Mutex::new(None),
             history_dirty: AtomicBool::new(true),
             show_requested: AtomicBool::new(false),
             hwnd: AtomicIsize::new(0),

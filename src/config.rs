@@ -35,6 +35,27 @@ pub fn duration_from_input(value: u32, unit: u32, max: u32) -> u32 {
     if whole >= MIN_SECONDS { whole } else { clamped }
 }
 
+/// Limite de tamanho digitado -> MB. Menos que um pedaço de gravação não daria
+/// nem pra começar, então o mínimo é 10 MB. 0 = sem limite.
+pub fn record_limit_from_input(value: u32, unit: u32) -> u32 {
+    const MIN_MB: u32 = 10;
+    const MAX_MB: u32 = 1_000_000; // 1 TB
+    match value {
+        0 => 0,
+        v => v.saturating_mul(unit).clamp(MIN_MB, MAX_MB),
+    }
+}
+
+/// "850 MB", "1.2 GB".
+pub fn format_size(bytes: u64) -> String {
+    let mb = bytes as f64 / 1_000_000.0;
+    if mb >= 1000.0 {
+        format!("{:.1} GB", mb / 1000.0)
+    } else {
+        format!("{mb:.0} MB")
+    }
+}
+
 /// "90s", "2min 10s", "1h 30min".
 pub fn format_duration(seconds: u32) -> String {
     if seconds < 120 {
@@ -104,6 +125,8 @@ pub struct Config {
     pub shortcut: Combo,
     /// Atalho de começar/parar a gravação daqui pra frente.
     pub record_shortcut: Combo,
+    /// Limite de tamanho da gravação, em MB. 0 = sem limite.
+    pub record_limit_mb: u32,
     /// Captura o som do PC (o que sai nos fones/caixas).
     pub audio: bool,
     /// Captura o microfone padrão do Windows.
@@ -132,6 +155,7 @@ impl Default for Config {
             quality: Quality::default(),
             shortcut: Combo::default(),
             record_shortcut: Combo::record_default(),
+            record_limit_mb: 0,
             audio: true,
             mic: false,
             anywhere: true,
@@ -229,6 +253,16 @@ mod tests {
         assert_eq!(cfg.resolution, 0);
         assert_eq!(cfg.shortcut, Combo::default());
         assert!(cfg.monitor.is_empty());
+    }
+
+    #[test]
+    fn record_limit_and_size_text() {
+        assert_eq!(record_limit_from_input(0, 1000), 0);
+        assert_eq!(record_limit_from_input(5, 1), 10);
+        assert_eq!(record_limit_from_input(500, 1), 500);
+        assert_eq!(record_limit_from_input(2, 1000), 2000);
+        assert_eq!(format_size(412_000_000), "412 MB");
+        assert_eq!(format_size(1_250_000_000), "1.2 GB");
     }
 
     #[test]

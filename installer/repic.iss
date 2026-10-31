@@ -1,5 +1,5 @@
 ; Instalador do RePic (Inno Setup 6).
-; Compilar: iscc /DMyAppVersion=0.4.2 /DFfmpegExe=caminho\ffmpeg.exe installer\repic.iss
+; Compilar: iscc /DMyAppVersion=0.4.3 /DFfmpegExe=caminho\ffmpeg.exe installer\repic.iss
 ; Sai em dist\RePic-Setup.exe.
 
 #ifndef MyAppVersion
