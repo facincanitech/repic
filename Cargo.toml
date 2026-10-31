@@ -1,6 +1,6 @@
 [package]
 name = "repic"
-version = "0.4.4"
+version = "0.4.5"
 edition = "2024"
 description = "Clipador leve: aperta F8 e salva os ultimos segundos da tela"
 

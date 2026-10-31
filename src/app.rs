@@ -247,7 +247,7 @@ impl ClipApp {
                 let btn = egui::Button::new(RichText::new(label).color(Color32::WHITE).strong())
                     .fill(ACCENT)
                     .min_size(Vec2::new(0.0, 34.0));
-                if ui.add_enabled(!saving, btn).clicked() {
+                if ui.add_enabled(!saving, btn).on_hover_text(t().clip_tip).clicked() {
                     recorder::trigger_save(self.shared.clone());
                 }
 
@@ -272,7 +272,11 @@ impl ClipApp {
                 let btn = egui::Button::new(RichText::new(label).color(Color32::WHITE).strong())
                     .fill(fill)
                     .min_size(Vec2::new(0.0, 34.0));
-                if ui.add_enabled(!(recording && stopping), btn).clicked() {
+                if ui
+                    .add_enabled(!(recording && stopping), btn)
+                    .on_hover_text(t().record_tip)
+                    .clicked()
+                {
                     recorder::toggle_recording(self.shared.clone());
                 }
             });

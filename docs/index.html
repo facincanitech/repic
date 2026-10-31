@@ -185,7 +185,7 @@
     <div class="shot" aria-hidden="true">
       <div class="titlebar"><span class="dot" style="width:10px;height:10px;box-shadow:0 0 0 2px #18181c,0 0 0 3px #f5f5f5"></span>RePic<div class="ctrls"><span>—</span><span>☐</span><span>✕</span></div></div>
       <div class="app">
-        <div class="app-top"><span class="dot rec"></span><h3>RePic</h3><span class="rec-btn" data-t="m_record">Gravar · F9</span><span class="clip" data-t="m_clip">Clipar agora · F8</span><span class="gear">⚙</span></div>
+        <div class="app-top"><span class="dot rec"></span><h3>RePic</h3><span class="rec-btn" data-t="m_record">Gravar · F9</span><span class="clip" data-t="m_clip">RePic · F8</span><span class="gear">⚙</span></div>
         <div class="status" data-t="m_status">Gravando em loop · Monitor 1 · 2560×1080 (principal) · NVIDIA (NVENC) · 60 fps · últimos 30s</div>
         <div class="saved" data-t="m_saved">Clipe salvo: RePic_2026-10-16_21-42-07.mp4</div>
         <div class="sep"></div>
@@ -201,16 +201,16 @@
 
   <section id="passado-futuro">
     <div class="wrap">
-      <h2 data-t="pf_title">Dois botões: passado e futuro</h2>
+      <h2 data-t="pf_title">Dois botões: RePic e Gravar</h2>
       <p class="sub" data-t="pf_sub">Grave o que já aconteceu ou o que ainda vai acontecer.</p>
       <div class="pf">
         <div class="pf-card">
-          <div class="pf-top"><span class="key-sm">F8</span><span class="pf-tag" data-t="pf_past_tag">O passado</span></div>
+          <div class="pf-top"><span class="key-sm">F8</span><span class="pf-tag" data-t="pf_past_tag">RePic · o passado</span></div>
           <h3 data-t="pf_past_t">Já aconteceu?</h3>
           <p data-t="pf_past_p">Aperta e salva o que acabou de rolar: de 15 segundos até 2 horas pra trás. A jogada já foi, e mesmo assim está gravada.</p>
         </div>
         <div class="pf-card pf-future">
-          <div class="pf-top"><span class="key-sm">F9</span><span class="pf-tag" data-t="pf_future_tag">O futuro</span></div>
+          <div class="pf-top"><span class="key-sm">F9</span><span class="pf-tag" data-t="pf_future_tag">Gravar · o futuro</span></div>
           <h3 data-t="pf_future_t">Vai acontecer?</h3>
           <p data-t="pf_future_p">Aperta pra começar a gravar, aperta de novo pra parar, como no OBS. Mostra o tamanho na tela em tempo real e pode parar sozinha num limite de MB ou GB.</p>
         </div>
@@ -289,7 +289,7 @@ const T = {
     h1_a: "Press", h1_b: "Get a clip.",
     lead: "RePic keeps recording your screen in a loop. Something epic happened? Hit the shortcut and the last 30 seconds become a video. No account, no upload, no FPS hit.",
     cta: "Download for Windows", free: "Free",
-    m_record: "Record · F9", m_clip: "Clip now · F8", m_status: "Recording in a loop · Monitor 1 · 2560×1080 (main) · NVIDIA (NVENC) · 60 fps · last 30s",
+    m_record: "Record · F9", m_clip: "RePic · F8", m_status: "Recording in a loop · Monitor 1 · 2560×1080 (main) · NVIDIA (NVENC) · 60 fps · last 30s",
     m_saved: "Clip saved: RePic_2026-10-16_21-42-07.mp4", m_recent: "Recent clips", m_open: "Open folder",
     m_folder: "Folder", m_export: "Export", m_delete: "Delete",
     f_title: "Actually lightweight", f_sub: "Made to run alongside your game without you even noticing it's open.",
@@ -298,9 +298,9 @@ const T = {
     f3_t: "Nothing leaves your PC", f3_p: "No login, no account, no cloud, no ads. Clips stay in your Videos folder.",
     f4_t: "Any key", f4_p: "Pick any shortcut, alone or with Ctrl/Alt/Shift. The key still works in your game.",
     f5_t: "PC sound + microphone", f5_p: "Records what plays on your headphones and, if you want, your mic, in sync with the video.",
-    pf_title: "Two buttons: past and future", pf_sub: "Record what already happened or what's about to happen.",
-    pf_past_tag: "The past", pf_past_t: "Already happened?", pf_past_p: "Press it and save what just went down: from 15 seconds up to 2 hours back. The play is over, and it's still recorded.",
-    pf_future_tag: "The future", pf_future_t: "About to happen?", pf_future_p: "Press to start recording, press again to stop, like OBS. It shows the size on screen live and can stop by itself at a MB or GB limit.",
+    pf_title: "Two buttons: RePic and Record", pf_sub: "Record what already happened or what's about to happen.",
+    pf_past_tag: "RePic · the past", pf_past_t: "Already happened?", pf_past_p: "Press it and save what just went down: from 15 seconds up to 2 hours back. The play is over, and it's still recorded.",
+    pf_future_tag: "Record · the future", pf_future_t: "About to happen?", pf_future_p: "Press to start recording, press again to stop, like OBS. It shows the size on screen live and can stop by itself at a MB or GB limit.",
     f7_t: "Speaks your language", f7_p: "Portuguese, English or Spanish, based on your Windows language.",
     f8_t: "Up to 2 hours", f8_p: "Pick from 15 seconds to 2 hours of past. RePic shows how much disk it may use before you choose.",
     f9_t: "Works during calls", f9_p: "PC sound and microphone keep recording even while you're in a voice call.",
@@ -323,7 +323,7 @@ const T = {
     h1_a: "Pulsa", h1_b: "Ya es clip.",
     lead: "RePic graba tu pantalla en bucle. ¿Pasó algo épico? Pulsa el atajo y los últimos 30 segundos se convierten en un video. Sin cuenta, sin subir nada, sin bajar los FPS.",
     cta: "Descargar para Windows", free: "Gratis",
-    m_record: "Grabar · F9", m_clip: "Clipear ahora · F8", m_status: "Grabando en bucle · Monitor 1 · 2560×1080 (principal) · NVIDIA (NVENC) · 60 fps · últimos 30s",
+    m_record: "Grabar · F9", m_clip: "RePic · F8", m_status: "Grabando en bucle · Monitor 1 · 2560×1080 (principal) · NVIDIA (NVENC) · 60 fps · últimos 30s",
     m_saved: "Clip guardado: RePic_2026-10-16_21-42-07.mp4", m_recent: "Clips recientes", m_open: "Abrir carpeta",
     m_folder: "Carpeta", m_export: "Exportar", m_delete: "Eliminar",
     f_title: "Ligero de verdad", f_sub: "Hecho para correr junto al juego sin que te acuerdes de que está abierto.",
@@ -332,9 +332,9 @@ const T = {
     f3_t: "Nada sale de tu PC", f3_p: "Sin login, sin cuenta, sin nube, sin anuncios. Los clips quedan en tu carpeta Videos.",
     f4_t: "Cualquier tecla", f4_p: "Elige el atajo que quieras, solo o con Ctrl/Alt/Shift. La tecla sigue funcionando en el juego.",
     f5_t: "Sonido del PC + micrófono", f5_p: "Graba lo que suena en tus auriculares y, si quieres, tu micrófono, sincronizado con el video.",
-    pf_title: "Dos botones: pasado y futuro", pf_sub: "Graba lo que ya pasó o lo que está por pasar.",
-    pf_past_tag: "El pasado", pf_past_t: "¿Ya pasó?", pf_past_p: "Púlsalo y guarda lo que acaba de ocurrir: de 15 segundos hasta 2 horas atrás. La jugada ya terminó, y aun así está grabada.",
-    pf_future_tag: "El futuro", pf_future_t: "¿Está por pasar?", pf_future_p: "Púlsalo para empezar a grabar y otra vez para parar, como OBS. Muestra el tamaño en pantalla en vivo y puede parar sola en un límite de MB o GB.",
+    pf_title: "Dos botones: RePic y Grabar", pf_sub: "Graba lo que ya pasó o lo que está por pasar.",
+    pf_past_tag: "RePic · el pasado", pf_past_t: "¿Ya pasó?", pf_past_p: "Púlsalo y guarda lo que acaba de ocurrir: de 15 segundos hasta 2 horas atrás. La jugada ya terminó, y aun así está grabada.",
+    pf_future_tag: "Grabar · el futuro", pf_future_t: "¿Está por pasar?", pf_future_p: "Púlsalo para empezar a grabar y otra vez para parar, como OBS. Muestra el tamaño en pantalla en vivo y puede parar sola en un límite de MB o GB.",
     f7_t: "Habla tu idioma", f7_p: "Portugués, inglés o español, según el idioma de Windows.",
     f8_t: "Hasta 2 horas", f8_p: "Elige de 15 segundos a 2 horas de pasado. RePic muestra cuánto disco puede usar antes de que elijas.",
     f9_t: "Funciona en llamadas", f9_p: "El sonido del PC y el micrófono siguen grabando incluso en una llamada de voz.",

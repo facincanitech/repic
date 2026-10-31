@@ -24,14 +24,14 @@ O app fala português, inglês ou espanhol, conforme o idioma do Windows.
 
 | Opção | Valores |
 |---|---|
-| Atalhos | um pra clipar o passado e outro pra começar/parar de gravar: qualquer tecla, sozinha ou com Ctrl/Alt/Shift (a tecla continua funcionando no jogo) |
+| Atalhos | RePic pra salvar o passado e Gravar pra começar/parar daqui pra frente: qualquer tecla, sozinha ou com Ctrl/Alt/Shift (a tecla continua funcionando no jogo) |
 | Monitor | o principal do Windows ou qualquer outro |
 | Duração | digitada, em segundos, minutos ou horas, de 15 segundos até 2 horas (mostra quanto do disco pode usar) |
 | FPS | **nativo do monitor** (recomendado) ou menos: 240, 165, 144, 120, 60, 30 |
 | Resolução | **nativa do monitor** (recomendado) ou menos: 2160p, 1440p, 1080p, 720p, sem esticar nem cortar (num ultrawide, 1080p fica 1920×810; reduzir usa um pouco de CPU) |
 | Qualidade | Leve, Normal, **Alta** (recomendado), Máxima |
 | Limite da gravação | em MB ou GB: a gravação para e salva sozinha um pouco antes. Vazio: sem limite. O tempo e o tamanho aparecem na tela enquanto grava (com "Avisar na tela" ligado) |
-| Clipar em qualquer lugar | ligado: o atalho vale sempre. Desligado: só com jogo/vídeo em tela cheia |
+| RePic em qualquer lugar | ligado: o atalho vale sempre. Desligado: só com jogo/vídeo em tela cheia |
 | Som do PC | liga/desliga |
 | Microfone | liga/desliga (usa o microfone padrão do Windows) |
 | Avisar na tela ao clipar | "Clipando…" / "Clipe gravado ✓" no canto, por cima do jogo e fora do vídeo. Desligado, avisa com som |

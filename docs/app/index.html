@@ -19,6 +19,7 @@
   button { font: inherit; color: #fff; background: var(--card-2); border: 0; border-radius: 10px; padding: 10px 14px; font-weight: 600; min-height: 44px; }
   button:disabled { opacity: .45; }
   button.primary { background: var(--accent); }
+  .actions small { display: block; font-weight: 400; font-size: 11px; opacity: .8; }
   button.icon { min-width: 44px; padding: 0 12px; font-size: 18px; }
   #status { padding: 0 16px; color: var(--muted); font-size: 13px; min-height: 19px; }
   #message { padding: 2px 16px 0; color: var(--ok); font-size: 13px; min-height: 19px; }
@@ -91,11 +92,6 @@
     <label class="line"><span data-t="mic"></span><input type="checkbox" id="mic"></label>
     <div class="hint" data-t="audio_hint"></div>
   </fieldset>
-  <fieldset><legend data-t="sec_bubble"></legend>
-    <label class="line"><span data-t="bubble"></span><input type="checkbox" id="bubble"></label>
-    <div class="hint" data-t="bubble_hint"></div>
-    <button id="allowBubble" data-t="allow_bubble" style="display:none;width:100%"></button>
-  </fieldset>
   <p class="foot"><span id="version"></span> · powered by <a href="https://facincanitech.github.io" target="_blank" rel="noopener">FacincaniTech</a></p>
   <button id="closeSettings" class="primary" style="width:100%" data-t="close"></button>
 </dialog>
@@ -108,36 +104,33 @@
 <script>
 const T = {
   pt: {
-    start: "Ligar gravação em loop", stop_all: "Desligar", clip: "Clipar", record: "Gravar", stop: "Parar", saving: "Salvando…",
-    recent: "Últimos clipes", empty: "Ligue a gravação e aperte Clipar: os últimos segundos da tela viram um vídeo.",
+    start: "Iniciar", stop_all: "Encerrar", clip: "RePic", clip_hint: "salva o que já passou", record: "Gravar", record_hint: "daqui pra frente", stop: "Parar", saving: "Salvando…",
+    recent: "Últimos clipes", empty: "Aperte Iniciar e toque na bolinha: RePic salva o que já passou, Gravar grava daqui pra frente.",
     settings: "Configurações", sec_recording: "Gravação", duration: "Duração do clipe", duration_hint: "De 15 segundos até 2 horas. Quanto maior, mais espaço ocupa o tempo todo.",
     units: ["segundos", "minutos", "horas"], resolution: "Resolução", native_res: "Nativa (recomendado)", native_fps: "Nativo (recomendado)", quality: "Qualidade",
     qualities: ["Leve", "Normal", "Alta (recomendado)", "Máxima"], limit: "Limite da gravação", limit_hint: "A gravação para e salva sozinha um pouco antes desse tamanho. Vazio: sem limite.",
     sec_audio: "Áudio", audio: "Som do aparelho", mic: "Microfone", audio_hint: "Alguns apps e jogos não permitem gravar o som deles.",
-    sec_bubble: "Bolha", bubble: "Mostrar bolha com os botões", bubble_hint: "Fica por cima dos outros apps, com o tempo e o tamanho. Ela aparece no vídeo; dá pra arrastar pra um canto.", allow_bubble: "Permitir a bolha",
-    close: "Fechar", cancel: "Cancelar", delete: "Excluir", share: "Compartilhar", confirm_delete: "Excluir {}? Não dá pra desfazer.", looping: "Gravando em loop · {} · últimos {}", off: "Desligado",
+    close: "Fechar", cancel: "Cancelar", delete: "Excluir", share: "Compartilhar", confirm_delete: "Excluir {}? Não dá pra desfazer.", looping: "Gravando em loop · {} · últimos {}", off: "Aperte Iniciar e a bolinha aparece por cima dos outros apps. Dá pra arrastar.", need_overlay: "Pra bolinha aparecer, o Android precisa da permissão de sobrepor outros apps.",
     recording: "Gravando · {} · {}", update: "Versão nova do app: {}", download: "Baixar", browser: "Abra pelo app do RePic no Android."
   },
   en: {
-    start: "Turn on loop recording", stop_all: "Turn off", clip: "Clip", record: "Record", stop: "Stop", saving: "Saving…",
-    recent: "Recent clips", empty: "Turn recording on and press Clip: the last seconds of your screen become a video.",
+    start: "Start", stop_all: "End", clip: "RePic", clip_hint: "saves what already happened", record: "Record", record_hint: "from now on", stop: "Stop", saving: "Saving…",
+    recent: "Recent clips", empty: "Press Start and tap the bubble: RePic saves what already happened, Record records from now on.",
     settings: "Settings", sec_recording: "Recording", duration: "Clip length", duration_hint: "From 15 seconds to 2 hours. Longer lengths use more storage all the time.",
     units: ["seconds", "minutes", "hours"], resolution: "Resolution", native_res: "Native (recommended)", native_fps: "Native (recommended)", quality: "Quality",
     qualities: ["Light", "Normal", "High (recommended)", "Maximum"], limit: "Recording limit", limit_hint: "Recording stops and saves by itself just before this size. Empty: no limit.",
     sec_audio: "Audio", audio: "Device sound", mic: "Microphone", audio_hint: "Some apps and games don't allow their sound to be recorded.",
-    sec_bubble: "Bubble", bubble: "Show bubble with the buttons", bubble_hint: "Stays over other apps, with the time and size. It shows up in the video; you can drag it to a corner.", allow_bubble: "Allow the bubble",
-    close: "Close", cancel: "Cancel", delete: "Delete", share: "Share", confirm_delete: "Delete {}? This can't be undone.", looping: "Recording in a loop · {} · last {}", off: "Off",
+    close: "Close", cancel: "Cancel", delete: "Delete", share: "Share", confirm_delete: "Delete {}? This can't be undone.", looping: "Recording in a loop · {} · last {}", off: "Press Start and the bubble shows up over your other apps. You can drag it.", need_overlay: "For the bubble to show up, Android needs the permission to display over other apps.",
     recording: "Recording · {} · {}", update: "New app version: {}", download: "Download", browser: "Open this from the RePic app on Android."
   },
   es: {
-    start: "Activar grabación en bucle", stop_all: "Apagar", clip: "Clipear", record: "Grabar", stop: "Parar", saving: "Guardando…",
-    recent: "Clips recientes", empty: "Activa la grabación y pulsa Clipear: los últimos segundos de la pantalla se convierten en un video.",
+    start: "Iniciar", stop_all: "Terminar", clip: "RePic", clip_hint: "guarda lo que ya pasó", record: "Grabar", record_hint: "de ahora en adelante", stop: "Parar", saving: "Guardando…",
+    recent: "Clips recientes", empty: "Pulsa Iniciar y toca la burbuja: RePic guarda lo que ya pasó, Grabar graba de ahora en adelante.",
     settings: "Configuración", sec_recording: "Grabación", duration: "Duración del clip", duration_hint: "De 15 segundos hasta 2 horas. Cuanto más largo, más espacio ocupa todo el tiempo.",
     units: ["segundos", "minutos", "horas"], resolution: "Resolución", native_res: "Nativa (recomendado)", native_fps: "Nativo (recomendado)", quality: "Calidad",
     qualities: ["Ligera", "Normal", "Alta (recomendado)", "Máxima"], limit: "Límite de grabación", limit_hint: "La grabación para y se guarda sola un poco antes de este tamaño. Vacío: sin límite.",
     sec_audio: "Audio", audio: "Sonido del dispositivo", mic: "Micrófono", audio_hint: "Algunas apps y juegos no permiten grabar su sonido.",
-    sec_bubble: "Burbuja", bubble: "Mostrar burbuja con los botones", bubble_hint: "Queda sobre las otras apps, con el tiempo y el tamaño. Aparece en el video; puedes arrastrarla a una esquina.", allow_bubble: "Permitir la burbuja",
-    close: "Cerrar", cancel: "Cancelar", delete: "Eliminar", share: "Compartir", confirm_delete: "¿Eliminar {}? No se puede deshacer.", looping: "Grabando en bucle · {} · últimos {}", off: "Apagado",
+    close: "Cerrar", cancel: "Cancelar", delete: "Eliminar", share: "Compartir", confirm_delete: "¿Eliminar {}? No se puede deshacer.", looping: "Grabando en bucle · {} · últimos {}", off: "Pulsa Iniciar y la burbuja aparece sobre las otras apps. Puedes arrastrarla.", need_overlay: "Para que aparezca la burbuja, Android necesita el permiso de mostrarse sobre otras apps.",
     recording: "Grabando · {} · {}", update: "Versión nueva de la app: {}", download: "Descargar", browser: "Abre esto desde la app RePic en Android."
   }
 };
@@ -149,7 +142,11 @@ const native = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.
 
 document.documentElement.lang = lang === "pt" ? "pt-BR" : lang;
 document.querySelectorAll("[data-t]").forEach(e => { e.textContent = t[e.dataset.t]; });
-$("clip").textContent = t.clip;
+const label = (button, title, hint) => {
+  button.textContent = title;
+  if (hint) { const small = document.createElement("small"); small.textContent = hint; button.append(small); }
+};
+label($("clip"), t.clip, t.clip_hint);
 $("durUnit").innerHTML = [1, 60, 3600].map((u, i) => `<option value="${u}">${t.units[i]}</option>`).join("");
 $("quality").innerHTML = t.qualities.map((q, i) => `<option value="${i}">${q}</option>`).join("");
 $("fps").innerHTML = `<option value="0">${t.native_fps}</option>` + [120, 90, 60, 30].map(f => `<option value="${f}">${f} fps</option>`).join("");
@@ -160,11 +157,11 @@ const formatDuration = s => {
   const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), r = s % 60;
   return [h && h + "h", m && m + "min", r && r + "s"].filter(Boolean).join(" ");
 };
-const formatSize = b => b >= 1e9 ? (b / 1e9).toFixed(1) + " GB" : Math.round(b / 1e6) + " MB";
+const formatSize = b => b >= 1e9 ? (b / 1e9).toFixed(1) + " GB" : b < 1e7 ? (b / 1e6).toFixed(1) + " MB" : Math.round(b / 1e6) + " MB";
 const clock = s => String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
 const bestUnit = s => s >= 3600 && s % 3600 === 0 ? 3600 : s >= 60 && s % 60 === 0 ? 60 : 1;
 
-let config = null, lastMessage = "", clipCount = -1;
+let config = null, lastMessage = "", clipCount = -1, waitingOverlay = false;
 
 async function refreshState() {
   if (!native) return;
@@ -172,9 +169,10 @@ async function refreshState() {
   $("dot").classList.toggle("on", s.running);
   $("power").textContent = s.running ? t.stop_all : t.start;
   $("power").classList.toggle("primary", !s.running);
+  $("clip").style.display = $("record").style.display = s.running ? "" : "none";
   $("clip").disabled = !s.running || s.saving;
   $("record").disabled = !s.running || (s.saving && !s.recording);
-  $("record").textContent = s.saving && !s.recording ? t.saving : s.recording ? t.stop : t.record;
+  label($("record"), s.saving && !s.recording ? t.saving : s.recording ? t.stop : t.record, s.saving || s.recording ? "" : t.record_hint);
   $("record").classList.toggle("primary", s.recording);
   const limit = config && config.limitMb ? " / " + formatSize(config.limitMb * 1e6) : "";
   $("status").textContent = !s.running ? t.off
@@ -185,7 +183,6 @@ async function refreshState() {
     $("message").textContent = s.message;
     refreshClips();
   }
-  $("allowBubble").style.display = s.canOverlay ? "none" : "block";
   $("version").textContent = "RePic v" + s.nativeVersion;
   window.nativeVersion = s.nativeVersion;
 }
@@ -258,7 +255,6 @@ function showConfig() {
   $("limitValue").value = config.limitMb ? config.limitMb / limitUnit : "";
   $("audio").checked = config.audio;
   $("mic").checked = config.mic;
-  $("bubble").checked = config.bubble;
 }
 
 async function saveConfig() {
@@ -274,7 +270,6 @@ async function saveConfig() {
     limitMb: limit * +$("limitUnit").value,
     audio: $("audio").checked,
     mic: $("mic").checked,
-    bubble: $("bubble").checked,
   };
   await native.setConfig(config);
   config = await native.getConfig();
@@ -299,6 +294,14 @@ async function checkNativeUpdate() {
   } catch (_) { /* Sem internet: tenta na próxima vez. */ }
 }
 
+/** Voltou da tela de permissão: com ela liberada, segue direto pro Iniciar. */
+async function returnFromOverlay() {
+  waitingOverlay = false;
+  const s = await native.getState();
+  if (s.canOverlay) { await native.startCapture().catch(() => {}); refreshState(); }
+  else $("message").textContent = t.need_overlay;
+}
+
 async function main() {
   if (!native) {
     $("status").textContent = t.browser;
@@ -311,21 +314,23 @@ async function main() {
   $("power").onclick = async () => {
     const s = await native.getState();
     if (s.running) await native.stopCapture();
-    else await native.startCapture().catch(() => {});
+    else if (s.canOverlay) await native.startCapture().catch(() => {});
+    else { waitingOverlay = true; await native.requestOverlay(); }
     refreshState();
   };
   $("clip").onclick = () => native.clip();
   $("record").onclick = () => native.toggleRecording();
   $("openSettings").onclick = () => { showConfig(); $("settings").showModal(); };
   $("closeSettings").onclick = () => $("settings").close();
-  $("allowBubble").onclick = () => native.requestOverlay();
   $("settings").querySelectorAll("input,select").forEach(e => { e.onchange = saveConfig; });
   await refreshState();
   await refreshClips();
   await checkNativeUpdate();
   setInterval(refreshState, 1000);
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) { clipCount = -1; refreshState(); refreshClips(); }
+    if (document.hidden) return;
+    clipCount = -1; refreshState(); refreshClips();
+    if (waitingOverlay) returnFromOverlay();
   });
 }
 main();
