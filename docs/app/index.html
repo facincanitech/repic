@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>RePic</title>
+<style>
+  :root {
+    --bg: #111115; --card: #1b1b21; --card-2: #25252d; --line: #2c2c35;
+    --text: #f2f2f5; --muted: #9a9aa6; --accent: #eb4040; --ok: #6ec878;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, sans-serif; padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+  header { display: flex; align-items: center; gap: 10px; padding: 14px 16px 4px; }
+  h1 { margin: 0; font-size: 22px; font-weight: 700; flex: 1; }
+  .dot { width: 13px; height: 13px; border-radius: 50%; background: #666; }
+  .dot.on { background: var(--accent); animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .45; } }
+  button { font: inherit; color: #fff; background: var(--card-2); border: 0; border-radius: 10px; padding: 10px 14px; font-weight: 600; min-height: 44px; }
+  button:disabled { opacity: .45; }
+  button.primary { background: var(--accent); }
+  button.icon { min-width: 44px; padding: 0 12px; font-size: 18px; }
+  #status { padding: 0 16px; color: var(--muted); font-size: 13px; min-height: 19px; }
+  #message { padding: 2px 16px 0; color: var(--ok); font-size: 13px; min-height: 19px; }
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 10px 16px 14px; }
+  .actions .wide { grid-column: 1 / -1; }
+  #update { margin: 0 16px 12px; padding: 10px 12px; background: var(--card); border: 1px solid var(--accent); border-radius: 10px; display: none; align-items: center; gap: 10px; }
+  #update span { flex: 1; font-size: 13px; }
+  #update a { color: #fff; background: var(--accent); padding: 8px 12px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 13px; }
+  h2 { font-size: 16px; margin: 4px 16px 10px; }
+  h2 small { color: var(--muted); font-weight: 400; margin-left: 6px; }
+  #clips { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; padding: 0 16px 24px; }
+  .clip { background: var(--card); border-radius: 12px; overflow: hidden; }
+  .thumb { aspect-ratio: 16/9; background: #26262c; position: relative; width: 100%; padding: 0; border-radius: 0; display: block; }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .thumb span { position: absolute; right: 8px; bottom: 6px; font-size: 11px; background: rgba(0,0,0,.65); padding: 1px 6px; border-radius: 4px; }
+  .info { padding: 8px 10px 10px; }
+  .info b { display: block; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .info small { display: block; color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .row button { font-size: 13px; padding: 6px; min-height: 38px; }
+  .danger { color: var(--accent); }
+  #empty { color: var(--muted); text-align: center; padding: 36px 24px; display: none; }
+  dialog { background: #18181e; color: var(--text); border: 1px solid var(--line); border-radius: 14px; width: min(94vw, 460px); max-height: 88vh; padding: 16px; }
+  dialog::backdrop { background: rgba(0,0,0,.65); }
+  dialog h3 { margin: 0 0 12px; font-size: 19px; }
+  fieldset { border: 0; background: var(--card); border-radius: 10px; margin: 0 0 12px; padding: 10px 12px; }
+  legend { color: var(--accent); font-weight: 600; font-size: 13px; float: left; width: 100%; padding: 0 0 8px; }
+  label.line { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 42px; clear: both; }
+  .pair { display: flex; gap: 6px; }
+  input[type=number], select { font: inherit; color: var(--text); background: var(--card-2); border: 1px solid var(--line); border-radius: 8px; padding: 8px; min-height: 40px; }
+  input[type=number] { width: 84px; }
+  input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); }
+  .hint { color: var(--muted); font-size: 12px; margin: 2px 0 8px; clear: both; }
+  .foot { color: var(--muted); font-size: 12px; text-align: center; margin: 4px 0 12px; }
+  .foot a { color: var(--text); }
+</style>
+</head>
+<body>
+<header>
+  <span class="dot" id="dot"></span><h1>RePic</h1>
+  <button class="icon" id="openSettings" aria-label="Settings">⚙</button>
+</header>
+<div id="status"></div>
+<div id="message"></div>
+<div class="actions">
+  <button class="primary wide" id="power"></button>
+  <button id="clip" disabled></button>
+  <button id="record" disabled></button>
+</div>
+<div id="update"><span id="updateText"></span><a id="updateLink" href="#"></a></div>
+<h2><span data-t="recent"></span><small id="count"></small></h2>
+<div id="empty" data-t="empty"></div>
+<div id="clips"></div>
+
+<dialog id="settings">
+  <h3 data-t="settings"></h3>
+  <fieldset><legend data-t="sec_recording"></legend>
+    <label class="line"><span data-t="duration"></span>
+      <span class="pair"><input type="number" id="durValue" min="1" inputmode="numeric"><select id="durUnit"></select></span></label>
+    <div class="hint" data-t="duration_hint"></div>
+    <label class="line">FPS<select id="fps"></select></label>
+    <label class="line"><span data-t="resolution"></span><select id="resolution"></select></label>
+    <label class="line"><span data-t="quality"></span><select id="quality"></select></label>
+    <label class="line"><span data-t="limit"></span>
+      <span class="pair"><input type="number" id="limitValue" min="0" inputmode="numeric"><select id="limitUnit"><option value="1">MB</option><option value="1000">GB</option></select></span></label>
+    <div class="hint" data-t="limit_hint"></div>
+  </fieldset>
+  <fieldset><legend data-t="sec_audio"></legend>
+    <label class="line"><span data-t="audio"></span><input type="checkbox" id="audio"></label>
+    <label class="line"><span data-t="mic"></span><input type="checkbox" id="mic"></label>
+    <div class="hint" data-t="audio_hint"></div>
+  </fieldset>
+  <fieldset><legend data-t="sec_bubble"></legend>
+    <label class="line"><span data-t="bubble"></span><input type="checkbox" id="bubble"></label>
+    <div class="hint" data-t="bubble_hint"></div>
+    <button id="allowBubble" data-t="allow_bubble" style="display:none;width:100%"></button>
+  </fieldset>
+  <p class="foot"><span id="version"></span> · powered by <a href="https://facincanitech.github.io" target="_blank" rel="noopener">FacincaniTech</a></p>
+  <button id="closeSettings" class="primary" style="width:100%" data-t="close"></button>
+</dialog>
+
+<dialog id="confirm">
+  <p id="confirmText"></p>
+  <div class="row"><button id="confirmNo" data-t="cancel"></button><button id="confirmYes" class="danger" data-t="delete"></button></div>
+</dialog>
+
+<script>
+const T = {
+  pt: {
+    start: "Ligar gravação em loop", stop_all: "Desligar", clip: "Clipar", record: "Gravar", stop: "Parar", saving: "Salvando…",
+    recent: "Últimos clipes", empty: "Ligue a gravação e aperte Clipar: os últimos segundos da tela viram um vídeo.",
+    settings: "Configurações", sec_recording: "Gravação", duration: "Duração do clipe", duration_hint: "De 15 segundos até 2 horas. Quanto maior, mais espaço ocupa o tempo todo.",
+    units: ["segundos", "minutos", "horas"], resolution: "Resolução", native_res: "Nativa (recomendado)", native_fps: "Nativo (recomendado)", quality: "Qualidade",
+    qualities: ["Leve", "Normal", "Alta (recomendado)", "Máxima"], limit: "Limite da gravação", limit_hint: "A gravação para e salva sozinha um pouco antes desse tamanho. Vazio: sem limite.",
+    sec_audio: "Áudio", audio: "Som do aparelho", mic: "Microfone", audio_hint: "Alguns apps e jogos não permitem gravar o som deles.",
+    sec_bubble: "Bolha", bubble: "Mostrar bolha com os botões", bubble_hint: "Fica por cima dos outros apps, com o tempo e o tamanho. Ela aparece no vídeo; dá pra arrastar pra um canto.", allow_bubble: "Permitir a bolha",
+    close: "Fechar", cancel: "Cancelar", delete: "Excluir", share: "Compartilhar", confirm_delete: "Excluir {}? Não dá pra desfazer.", looping: "Gravando em loop · {} · últimos {}", off: "Desligado",
+    recording: "Gravando · {} · {}", update: "Versão nova do app: {}", download: "Baixar", browser: "Abra pelo app do RePic no Android."
+  },
+  en: {
+    start: "Turn on loop recording", stop_all: "Turn off", clip: "Clip", record: "Record", stop: "Stop", saving: "Saving…",
+    recent: "Recent clips", empty: "Turn recording on and press Clip: the last seconds of your screen become a video.",
+    settings: "Settings", sec_recording: "Recording", duration: "Clip length", duration_hint: "From 15 seconds to 2 hours. Longer lengths use more storage all the time.",
+    units: ["seconds", "minutes", "hours"], resolution: "Resolution", native_res: "Native (recommended)", native_fps: "Native (recommended)", quality: "Quality",
+    qualities: ["Light", "Normal", "High (recommended)", "Maximum"], limit: "Recording limit", limit_hint: "Recording stops and saves by itself just before this size. Empty: no limit.",
+    sec_audio: "Audio", audio: "Device sound", mic: "Microphone", audio_hint: "Some apps and games don't allow their sound to be recorded.",
+    sec_bubble: "Bubble", bubble: "Show bubble with the buttons", bubble_hint: "Stays over other apps, with the time and size. It shows up in the video; you can drag it to a corner.", allow_bubble: "Allow the bubble",
+    close: "Close", cancel: "Cancel", delete: "Delete", share: "Share", confirm_delete: "Delete {}? This can't be undone.", looping: "Recording in a loop · {} · last {}", off: "Off",
+    recording: "Recording · {} · {}", update: "New app version: {}", download: "Download", browser: "Open this from the RePic app on Android."
+  },
+  es: {
+    start: "Activar grabación en bucle", stop_all: "Apagar", clip: "Clipear", record: "Grabar", stop: "Parar", saving: "Guardando…",
+    recent: "Clips recientes", empty: "Activa la grabación y pulsa Clipear: los últimos segundos de la pantalla se convierten en un video.",
+    settings: "Configuración", sec_recording: "Grabación", duration: "Duración del clip", duration_hint: "De 15 segundos hasta 2 horas. Cuanto más largo, más espacio ocupa todo el tiempo.",
+    units: ["segundos", "minutos", "horas"], resolution: "Resolución", native_res: "Nativa (recomendado)", native_fps: "Nativo (recomendado)", quality: "Calidad",
+    qualities: ["Ligera", "Normal", "Alta (recomendado)", "Máxima"], limit: "Límite de grabación", limit_hint: "La grabación para y se guarda sola un poco antes de este tamaño. Vacío: sin límite.",
+    sec_audio: "Audio", audio: "Sonido del dispositivo", mic: "Micrófono", audio_hint: "Algunas apps y juegos no permiten grabar su sonido.",
+    sec_bubble: "Burbuja", bubble: "Mostrar burbuja con los botones", bubble_hint: "Queda sobre las otras apps, con el tiempo y el tamaño. Aparece en el video; puedes arrastrarla a una esquina.", allow_bubble: "Permitir la burbuja",
+    close: "Cerrar", cancel: "Cancelar", delete: "Eliminar", share: "Compartir", confirm_delete: "¿Eliminar {}? No se puede deshacer.", looping: "Grabando en bucle · {} · últimos {}", off: "Apagado",
+    recording: "Grabando · {} · {}", update: "Versión nueva de la app: {}", download: "Descargar", browser: "Abre esto desde la app RePic en Android."
+  }
+};
+const lang = (navigator.language || "en").slice(0, 2).toLowerCase();
+const t = T[lang] || T.en;
+const fill = (text, ...args) => args.reduce((s, a) => s.replace("{}", a), text);
+const $ = id => document.getElementById(id);
+const native = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.RePic;
+
+document.documentElement.lang = lang === "pt" ? "pt-BR" : lang;
+document.querySelectorAll("[data-t]").forEach(e => { e.textContent = t[e.dataset.t]; });
+$("clip").textContent = t.clip;
+$("durUnit").innerHTML = [1, 60, 3600].map((u, i) => `<option value="${u}">${t.units[i]}</option>`).join("");
+$("quality").innerHTML = t.qualities.map((q, i) => `<option value="${i}">${q}</option>`).join("");
+$("fps").innerHTML = `<option value="0">${t.native_fps}</option>` + [120, 90, 60, 30].map(f => `<option value="${f}">${f} fps</option>`).join("");
+$("resolution").innerHTML = `<option value="0">${t.native_res}</option>` + [1440, 1080, 720, 480].map(r => `<option value="${r}">${r}p</option>`).join("");
+
+const formatDuration = s => {
+  if (s < 120) return s + "s";
+  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), r = s % 60;
+  return [h && h + "h", m && m + "min", r && r + "s"].filter(Boolean).join(" ");
+};
+const formatSize = b => b >= 1e9 ? (b / 1e9).toFixed(1) + " GB" : Math.round(b / 1e6) + " MB";
+const clock = s => String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
+const bestUnit = s => s >= 3600 && s % 3600 === 0 ? 3600 : s >= 60 && s % 60 === 0 ? 60 : 1;
+
+let config = null, lastMessage = "", clipCount = -1;
+
+async function refreshState() {
+  if (!native) return;
+  const s = await native.getState();
+  $("dot").classList.toggle("on", s.running);
+  $("power").textContent = s.running ? t.stop_all : t.start;
+  $("power").classList.toggle("primary", !s.running);
+  $("clip").disabled = !s.running || s.saving;
+  $("record").disabled = !s.running || (s.saving && !s.recording);
+  $("record").textContent = s.saving && !s.recording ? t.saving : s.recording ? t.stop : t.record;
+  $("record").classList.toggle("primary", s.recording);
+  const limit = config && config.limitMb ? " / " + formatSize(config.limitMb * 1e6) : "";
+  $("status").textContent = !s.running ? t.off
+    : s.recording ? fill(t.recording, clock(s.recordingSeconds), formatSize(s.recordingBytes) + limit)
+    : fill(t.looping, s.videoSize.replace("x", "×"), config ? formatDuration(config.seconds) : "");
+  if (s.message !== lastMessage) {
+    lastMessage = s.message;
+    $("message").textContent = s.message;
+    refreshClips();
+  }
+  $("allowBubble").style.display = s.canOverlay ? "none" : "block";
+  $("version").textContent = "RePic v" + s.nativeVersion;
+  window.nativeVersion = s.nativeVersion;
+}
+
+async function refreshClips() {
+  if (!native) return;
+  const { clips } = await native.listClips();
+  const list = Array.isArray(clips) ? clips : [];
+  $("count").textContent = list.length;
+  $("empty").style.display = list.length ? "none" : "block";
+  if (list.length === clipCount) return;
+  clipCount = list.length;
+  const box = $("clips");
+  box.textContent = "";
+  for (const clip of list) {
+    const card = document.createElement("div");
+    card.className = "clip";
+    const thumb = document.createElement("button");
+    thumb.className = "thumb";
+    const img = document.createElement("img");
+    img.alt = "";
+    img.loading = "lazy";
+    const badge = document.createElement("span");
+    badge.textContent = formatSize(clip.size);
+    thumb.append(img, badge);
+    thumb.onclick = () => native.openClip({ id: clip.id });
+    native.thumbnail({ id: clip.id }).then(r => { img.src = r.image; }).catch(() => {});
+    const info = document.createElement("div");
+    info.className = "info";
+    const name = document.createElement("b");
+    name.textContent = clip.name.replace(/\.mp4$/, "");
+    const when = document.createElement("small");
+    when.textContent = new Date(clip.date * 1000).toLocaleString() + " · " + formatDuration(Math.round(clip.duration / 1000));
+    const row = document.createElement("div");
+    row.className = "row";
+    const share = document.createElement("button");
+    share.textContent = t.share;
+    share.onclick = () => native.shareClip({ id: clip.id });
+    const del = document.createElement("button");
+    del.textContent = t.delete;
+    del.className = "danger";
+    del.onclick = () => askDelete(clip);
+    row.append(share, del);
+    info.append(name, when, row);
+    card.append(thumb, info);
+    box.append(card);
+  }
+}
+
+function askDelete(clip) {
+  $("confirmText").textContent = fill(t.confirm_delete, clip.name);
+  $("confirmYes").onclick = async () => {
+    $("confirm").close();
+    await native.deleteClip({ id: clip.id }).catch(() => {});
+    clipCount = -1;
+    refreshClips();
+  };
+  $("confirm").showModal();
+}
+
+function showConfig() {
+  const unit = bestUnit(config.seconds);
+  $("durUnit").value = unit;
+  $("durValue").value = config.seconds / unit;
+  $("fps").value = config.fps;
+  $("resolution").value = config.resolution;
+  $("quality").value = config.quality;
+  const limitUnit = config.limitMb && config.limitMb % 1000 === 0 ? 1000 : 1;
+  $("limitUnit").value = limitUnit;
+  $("limitValue").value = config.limitMb ? config.limitMb / limitUnit : "";
+  $("audio").checked = config.audio;
+  $("mic").checked = config.mic;
+  $("bubble").checked = config.bubble;
+}
+
+async function saveConfig() {
+  const unit = +$("durUnit").value;
+  const typed = Math.max(1, parseInt($("durValue").value, 10) || 1);
+  const seconds = Math.min(7200, Math.max(15, typed * unit));
+  const limit = parseInt($("limitValue").value, 10) || 0;
+  config = {
+    seconds,
+    fps: +$("fps").value,
+    resolution: +$("resolution").value,
+    quality: +$("quality").value,
+    limitMb: limit * +$("limitUnit").value,
+    audio: $("audio").checked,
+    mic: $("mic").checked,
+    bubble: $("bubble").checked,
+  };
+  await native.setConfig(config);
+  config = await native.getConfig();
+  showConfig();
+}
+
+/** Avisa quando existe APK mais novo: a interface atualiza sozinha, a captura não. */
+async function checkNativeUpdate() {
+  try {
+    const info = await (await fetch("apk.json", { cache: "no-store" })).json();
+    const newer = (a, b) => {
+      const x = a.split(".").map(Number), y = b.split(".").map(Number);
+      for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0);
+      return false;
+    };
+    if (window.nativeVersion && newer(info.version, window.nativeVersion)) {
+      $("updateText").textContent = fill(t.update, info.version);
+      $("updateLink").textContent = t.download;
+      $("updateLink").href = info.url;
+      $("update").style.display = "flex";
+    }
+  } catch (_) { /* Sem internet: tenta na próxima vez. */ }
+}
+
+async function main() {
+  if (!native) {
+    $("status").textContent = t.browser;
+    document.querySelector(".actions").style.display = "none";
+    $("openSettings").style.display = "none";
+    return;
+  }
+  config = await native.getConfig();
+  showConfig();
+  $("power").onclick = async () => {
+    const s = await native.getState();
+    if (s.running) await native.stopCapture();
+    else await native.startCapture().catch(() => {});
+    refreshState();
+  };
+  $("clip").onclick = () => native.clip();
+  $("record").onclick = () => native.toggleRecording();
+  $("openSettings").onclick = () => { showConfig(); $("settings").showModal(); };
+  $("closeSettings").onclick = () => $("settings").close();
+  $("allowBubble").onclick = () => native.requestOverlay();
+  $("settings").querySelectorAll("input,select").forEach(e => { e.onchange = saveConfig; });
+  await refreshState();
+  await refreshClips();
+  await checkNativeUpdate();
+  setInterval(refreshState, 1000);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) { clipCount = -1; refreshState(); refreshClips(); }
+  });
+}
+main();
+</script>
+</body>
+</html>
