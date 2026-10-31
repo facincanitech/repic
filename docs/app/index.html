@@ -212,7 +212,6 @@ async function refreshClips() {
     thumb.className = "thumb";
     const img = document.createElement("img");
     img.alt = "";
-    img.loading = "lazy";
     const badge = document.createElement("span");
     badge.textContent = formatDuration(Math.round(clip.duration / 1000));
     thumb.append(img, badge);
