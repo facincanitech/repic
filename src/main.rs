@@ -120,7 +120,7 @@ fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("RePic")
-            .with_inner_size([980.0, 660.0])
+            .with_inner_size([980.0, 760.0])
             .with_min_inner_size([560.0, 440.0])
             .with_visible(!start_hidden)
             // Escondido: nem pega o foco no instante em que o eframe mostra a
