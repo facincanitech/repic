@@ -1,4 +1,4 @@
-use crate::hotkey::Combo;
+use crate::hotkey::{Combo, same_keys};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -7,6 +7,65 @@ pub const SECONDS_OPTIONS: [u32; 5] = [15, 30, 60, 90, 120];
 pub const FPS_OPTIONS: [u32; 6] = [240, 165, 144, 120, 60, 30];
 /// Alturas pra reduzir a resolução (o padrão é a nativa). Do maior pro menor.
 pub const RES_OPTIONS: [u32; 4] = [2160, 1440, 1080, 720];
+pub const MIN_SECONDS: u32 = 15;
+/// Até 2 horas: mais que isso o buffer ocuparia disco demais o tempo todo.
+pub const MAX_SECONDS: u32 = 2 * 60 * 60;
+
+/// Tamanho do passo do − e do +: fino nos tempos curtos, largo nos longos.
+fn step_size(seconds: u32) -> u32 {
+    match seconds {
+        0..300 => 10,
+        300..1800 => 60,
+        _ => 600,
+    }
+}
+
+/// Próximo tempo no botão +.
+pub fn step_up(seconds: u32) -> u32 {
+    let step = step_size(seconds);
+    ((seconds / step + 1) * step).min(MAX_SECONDS)
+}
+
+/// Próximo tempo no botão −.
+pub fn step_down(seconds: u32) -> u32 {
+    let step = step_size(seconds.saturating_sub(1));
+    (seconds.saturating_sub(1) / step * step).max(MIN_SECONDS)
+}
+
+/// "90s", "2min 10s", "1h 30min".
+pub fn format_duration(seconds: u32) -> String {
+    if seconds < 120 {
+        return format!("{seconds}s");
+    }
+    let (h, m, s) = (seconds / 3600, seconds % 3600 / 60, seconds % 60);
+    let mut parts = Vec::new();
+    if h > 0 {
+        parts.push(format!("{h}h"));
+    }
+    if m > 0 {
+        parts.push(format!("{m}min"));
+    }
+    if s > 0 {
+        parts.push(format!("{s}s"));
+    }
+    parts.join(" ")
+}
+
+/// Tamanho final pra uma opção como "1080p": cabe em 1920×1080 sem esticar
+/// nem cortar (num ultrawide de 2560×1080 fica 1920×810). None = o monitor já
+/// cabe, então essa opção não reduz nada.
+pub fn fit_resolution(width: i32, height: i32, target: u32) -> Option<(u32, u32)> {
+    let box_w = target as f64 * 16.0 / 9.0;
+    let box_h = target as f64;
+    let (w, h) = (width as f64, height as f64);
+    if target == 0 || width <= 0 || height <= 0 || (w <= box_w && h <= box_h) {
+        return None;
+    }
+    let scale = (box_w / w).min(box_h / h);
+    // Largura e altura pares: o H.264 exige.
+    let even = |v: f64| (v.round() as u32) / 2 * 2;
+    Some((even(w * scale), even(h * scale)))
+}
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Quality {
@@ -40,6 +99,8 @@ pub struct Config {
     pub quality: Quality,
     /// Atalho de clipar (qualquer tecla, com ou sem Ctrl/Alt/Shift).
     pub shortcut: Combo,
+    /// Atalho de começar/parar a gravação daqui pra frente.
+    pub record_shortcut: Combo,
     /// Captura o som do PC (o que sai nos fones/caixas).
     pub audio: bool,
     /// Captura o microfone padrão do Windows.
@@ -67,6 +128,7 @@ impl Default for Config {
             resolution: 0,
             quality: Quality::default(),
             shortcut: Combo::default(),
+            record_shortcut: Combo::record_default(),
             audio: true,
             mic: false,
             anywhere: true,
@@ -102,7 +164,7 @@ impl Config {
     /// Conserta valores inválidos (ex.: config.json editado na mão).
     pub fn validate(&mut self) {
         let def = Self::default();
-        if !SECONDS_OPTIONS.contains(&self.seconds) {
+        if !(MIN_SECONDS..=MAX_SECONDS).contains(&self.seconds) {
             self.seconds = def.seconds;
         }
         if self.frame_rate != 0 && !FPS_OPTIONS.contains(&self.frame_rate) {
@@ -113,6 +175,15 @@ impl Config {
         }
         if self.shortcut.vk == 0 || self.shortcut.vk > 0xFE {
             self.shortcut = def.shortcut;
+        }
+        // Dois atalhos na mesma tecla: a segunda função nunca dispararia.
+        let invalid = self.record_shortcut.vk == 0 || self.record_shortcut.vk > 0xFE;
+        if invalid || same_keys(&self.record_shortcut, &self.shortcut) {
+            self.record_shortcut = def.record_shortcut;
+            if same_keys(&self.record_shortcut, &self.shortcut) {
+                self.record_shortcut.vk = 0x79; // F10
+                self.record_shortcut.scan = 0x44;
+            }
         }
         // v0.2 antigo guardava o nome do Windows (`\\.\DISPLAY5`), que muda
         // sozinho. Esse formato vira "principal".
@@ -155,6 +226,69 @@ mod tests {
         assert_eq!(cfg.resolution, 0);
         assert_eq!(cfg.shortcut, Combo::default());
         assert!(cfg.monitor.is_empty());
+    }
+
+    #[test]
+    fn the_two_shortcuts_never_share_a_key() {
+        let mut cfg = Config::default();
+        cfg.shortcut = Combo::record_default();
+        cfg.validate();
+        assert_eq!(cfg.shortcut, Combo::record_default());
+        assert_eq!(cfg.record_shortcut.vk, 0x79);
+        // Config antigo, sem o atalho de gravar, ganha o F9.
+        let cfg: Config = serde_json::from_str(r#"{"seconds":60}"#).unwrap();
+        assert_eq!(cfg.record_shortcut, Combo::record_default());
+    }
+
+    #[test]
+    fn duration_steps_follow_the_time_scale() {
+        assert_eq!(step_up(120), 130);
+        assert_eq!(step_up(125), 130);
+        assert_eq!(step_up(290), 300);
+        assert_eq!(step_up(300), 360);
+        assert_eq!(step_up(1800), 2400);
+        assert_eq!(step_up(MAX_SECONDS), MAX_SECONDS);
+        assert_eq!(step_down(130), 120);
+        assert_eq!(step_down(300), 290);
+        assert_eq!(step_down(360), 300);
+        assert_eq!(step_down(2400), 1800);
+        assert_eq!(step_down(MIN_SECONDS), MIN_SECONDS);
+    }
+
+    #[test]
+    fn duration_text() {
+        assert_eq!(format_duration(90), "90s");
+        assert_eq!(format_duration(120), "2min");
+        assert_eq!(format_duration(130), "2min 10s");
+        assert_eq!(format_duration(3600), "1h");
+        assert_eq!(format_duration(5400), "1h 30min");
+    }
+
+    #[test]
+    fn long_durations_are_kept_when_loading() {
+        let mut cfg = Config {
+            seconds: 1230,
+            ..Config::default()
+        };
+        cfg.validate();
+        assert_eq!(cfg.seconds, 1230);
+        cfg.seconds = MAX_SECONDS + 1;
+        cfg.validate();
+        assert_eq!(cfg.seconds, 30);
+    }
+
+    #[test]
+    fn resolution_fits_without_stretching() {
+        // Ultrawide: 1080p e 720p reduzem mantendo a proporção.
+        assert_eq!(fit_resolution(2560, 1080, 1080), Some((1920, 810)));
+        assert_eq!(fit_resolution(2560, 1080, 720), Some((1280, 540)));
+        assert_eq!(fit_resolution(2560, 1080, 1440), None);
+        // 16:9 normal.
+        assert_eq!(fit_resolution(3840, 2160, 1080), Some((1920, 1080)));
+        assert_eq!(fit_resolution(1920, 1080, 720), Some((1280, 720)));
+        assert_eq!(fit_resolution(1920, 1080, 1080), None);
+        // Nativo.
+        assert_eq!(fit_resolution(1920, 1080, 0), None);
     }
 
     #[test]

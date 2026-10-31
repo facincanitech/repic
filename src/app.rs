@@ -1,8 +1,11 @@
 //! Janela: barra de cima (status + clipar), grade com os últimos clipes,
 //! e as configurações num modal.
 
-use crate::config::{FPS_OPTIONS, Quality, RES_OPTIONS, SECONDS_OPTIONS};
-use crate::hotkey;
+use crate::config::{
+    FPS_OPTIONS, MAX_SECONDS, MIN_SECONDS, Quality, RES_OPTIONS, SECONDS_OPTIONS, fit_resolution,
+    format_duration, step_down, step_up,
+};
+use crate::hotkey::{self, Target};
 use crate::lang::{fill, t};
 use crate::platform::{self, Monitor};
 use crate::recorder;
@@ -24,6 +27,8 @@ const CARD_MIN_W: f32 = 280.0;
 const GAP: f32 = 12.0;
 /// Quanto tempo a mensagem ("Clipe salvo", "Exportado"…) fica na tela.
 const EVENT_SECS: u64 = 6;
+/// Som estéreo de 48 kHz em f32, que é o caso comum.
+const AUDIO_BYTES_PER_SEC: f64 = 384_000.0;
 
 pub fn apply_style(ctx: &egui::Context) {
     let mut v = egui::Visuals::dark();
@@ -64,9 +69,15 @@ pub struct ClipApp {
     confirm_delete: Option<PathBuf>,
     settings_open: bool,
     /// Esperando a pessoa apertar o novo atalho.
-    capturing: bool,
+    capturing: Option<Target>,
     monitors: Vec<Monitor>,
     autostart: bool,
+    /// Bytes de vídeo por segundo, medido ao abrir as configurações.
+    video_rate: f64,
+    /// Maior duração que cabe no disco agora.
+    max_seconds: u32,
+    /// Quando reiniciar a gravação por causa de uma configuração nova.
+    restart_at: Option<Instant>,
     /// Aberto com --tray: quadros que faltam pra esconder a janela (o eframe
     /// mostra ela sozinho depois do primeiro quadro, mesmo pedindo escondida).
     hide_in: Option<u8>,
@@ -83,9 +94,12 @@ impl ClipApp {
             thumbs: HashMap::new(),
             confirm_delete: None,
             settings_open: false,
-            capturing: false,
+            capturing: None,
             monitors: Vec::new(),
             autostart: platform::autostart_enabled(),
+            video_rate: 0.0,
+            max_seconds: MAX_SECONDS,
+            restart_at: None,
         }
     }
 
@@ -147,34 +161,38 @@ impl ClipApp {
     // Quem escuta a tecla nova é o gancho de teclado (hotkey.rs), não a
     // janela: assim pega a tecla física certa em qualquer layout.
 
-    fn start_capture(&mut self) {
+    fn start_capture(&mut self, target: Target) {
         *self.shared.captured.lock().unwrap() = None;
-        hotkey::begin_capture();
-        self.capturing = true;
+        hotkey::begin_capture(target);
+        self.capturing = Some(target);
     }
 
     fn cancel_capture(&mut self) {
         hotkey::cancel_capture();
-        self.capturing = false;
+        self.capturing = None;
     }
 
     /// Recebe o atalho escolhido (ou o Esc) do gancho.
     fn handle_capture(&mut self, ctx: &egui::Context) {
-        let Some(result) = self.shared.captured.lock().unwrap().take() else {
+        let Some((target, result)) = self.shared.captured.lock().unwrap().take() else {
             return;
         };
-        self.capturing = false;
+        self.capturing = None;
         // O Esc de cancelar não fecha as configurações junto.
         ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
         let Some(combo) = result else {
             return;
         };
-        let label = hotkey::label(&combo);
-        if let Some(t) = &self.tray {
-            let _ = t.set_tooltip(Some(crate::tray_tooltip(&label)));
+        if target == Target::Clip
+            && let Some(t) = &self.tray
+        {
+            let _ = t.set_tooltip(Some(crate::tray_tooltip(&hotkey::label(&combo))));
         }
         let mut cfg = self.shared.config.lock().unwrap();
-        cfg.shortcut = combo;
+        match target {
+            Target::Clip => cfg.shortcut = combo,
+            Target::Record => cfg.record_shortcut = combo,
+        }
         cfg.save();
     }
 
@@ -219,6 +237,30 @@ impl ClipApp {
                 if ui.add_enabled(!saving, btn).clicked() {
                     recorder::trigger_save(self.shared.clone());
                 }
+
+                let recording = self.shared.recording.load(Ordering::SeqCst);
+                let stopping = self.shared.rec_stop.load(Ordering::SeqCst);
+                let (label, fill) = if recording && stopping {
+                    (t().saving_btn.to_string(), Color32::from_gray(60))
+                } else if recording {
+                    let secs = self
+                        .shared
+                        .rec_started
+                        .lock()
+                        .unwrap()
+                        .map_or(0, |at| at.elapsed().as_secs());
+                    let clock = format!("{:02}:{:02}", secs / 60, secs % 60);
+                    (format!("{}  ·  {clock}", t().stop_btn), ACCENT)
+                } else {
+                    let key = hotkey::label(&cfg.record_shortcut);
+                    (format!("{}  ·  {key}", t().record_btn), Color32::from_gray(60))
+                };
+                let btn = egui::Button::new(RichText::new(label).color(Color32::WHITE).strong())
+                    .fill(fill)
+                    .min_size(Vec2::new(0.0, 34.0));
+                if ui.add_enabled(!(recording && stopping), btn).clicked() {
+                    recorder::toggle_recording(self.shared.clone());
+                }
             });
         });
 
@@ -258,7 +300,7 @@ impl ClipApp {
                 ui.label(RichText::new("🎬").size(48.0));
                 ui.add_space(8.0);
                 let key = hotkey::label(&cfg.shortcut);
-                let title = fill(t().empty_title, &[&key, &cfg.seconds]);
+                let title = fill(t().empty_title, &[&key, &format_duration(cfg.seconds)]);
                 ui.label(RichText::new(title).size(17.0).strong());
                 ui.add_space(4.0);
                 ui.label(RichText::new(t().empty_1).weak());
@@ -363,6 +405,11 @@ impl ClipApp {
     fn open_settings(&mut self) {
         self.monitors = platform::list_monitors();
         self.autostart = platform::autostart_enabled();
+        // O buffer fica na pasta temporária: é o disco dela que limita o tempo.
+        self.video_rate = recorder::video_bytes_per_sec(&self.shared);
+        self.max_seconds = platform::free_disk(&self.shared.paths.buffer_dir)
+            .map(|free| max_seconds_for_disk(free, self.video_rate))
+            .unwrap_or(MAX_SECONDS);
         self.settings_open = true;
     }
 
@@ -399,7 +446,7 @@ impl ClipApp {
         let mut cfg = self.shared.config();
         let before = cfg.clone();
         let mut autostart = self.autostart;
-        let mut change_key = false;
+        let mut change_key: Option<Target> = None;
         let mut pick_dir = false;
         let mut close = false;
 
@@ -419,22 +466,28 @@ impl ClipApp {
             let max_h = (ctx.content_rect().height() - 150.0).max(200.0);
             egui::ScrollArea::vertical().max_height(max_h).show(ui, |ui| {
                 section(ui, t().sec_shortcut, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label(t().key_to_clip);
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if self.capturing {
-                                if ui.button(t().cancel).clicked() {
-                                    change_key = true;
+                    for (target, label, combo) in [
+                        (Target::Clip, t().key_to_clip, cfg.shortcut),
+                        (Target::Record, t().key_to_record, cfg.record_shortcut),
+                    ] {
+                        ui.horizontal(|ui| {
+                            ui.label(label);
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if self.capturing == Some(target) {
+                                    if ui.button(t().cancel).clicked() {
+                                        change_key = Some(target);
+                                    }
+                                    ui.label(RichText::new(t().press_key).color(ACCENT));
+                                } else {
+                                    if ui.button(t().change).clicked() {
+                                        change_key = Some(target);
+                                    }
+                                    key_chip(ui, &hotkey::label(&combo));
                                 }
-                                ui.label(RichText::new(t().press_key).color(ACCENT));
-                            } else {
-                                if ui.button(t().change).clicked() {
-                                    change_key = true;
-                                }
-                                key_chip(ui, &hotkey::label(&cfg.shortcut));
-                            }
+                            });
                         });
-                    });
+                    }
+                    hint(ui, t().record_hint);
                     hint(ui, t().shortcut_hint);
                 });
 
@@ -462,13 +515,25 @@ impl ClipApp {
                         ui.end_row();
 
                         ui.label(t().duration);
-                        egui::ComboBox::from_id_salt("dur")
-                            .selected_text(fill(t().last_secs, &[&cfg.seconds]))
-                            .show_ui(ui, |ui| {
-                                for s in SECONDS_OPTIONS {
-                                    ui.selectable_value(&mut cfg.seconds, s, fill(t().last_secs, &[&s]));
-                                }
-                            });
+                        ui.horizontal(|ui| {
+                            let label = |s: u32| fill(t().last_secs, &[&format_duration(s)]);
+                            egui::ComboBox::from_id_salt("dur")
+                                .selected_text(label(cfg.seconds))
+                                .show_ui(ui, |ui| {
+                                    for s in SECONDS_OPTIONS {
+                                        ui.selectable_value(&mut cfg.seconds, s, label(s));
+                                    }
+                                });
+                            let can_down = cfg.seconds > MIN_SECONDS;
+                            if ui.add_enabled(can_down, egui::Button::new("−")).clicked() {
+                                cfg.seconds = step_down(cfg.seconds);
+                            }
+                            let next = step_up(cfg.seconds);
+                            let can_up = next > cfg.seconds && next <= self.max_seconds;
+                            if ui.add_enabled(can_up, egui::Button::new("+")).clicked() {
+                                cfg.seconds = next;
+                            }
+                        });
                         ui.end_row();
 
                         // O "nativo" vem do monitor escolhido; dá pra reduzir.
@@ -495,18 +560,21 @@ impl ClipApp {
                         let (nw, nh) = mon.as_ref().map(|m| (m.width, m.height)).unwrap_or((1920, 1080));
                         let native_label = fill(t().native_res, &[&nw, &nh]);
                         ui.label(t().resolution);
-                        let res_text = if cfg.resolution == 0 || cfg.resolution as i32 >= nh {
-                            native_label.clone()
-                        } else {
-                            format!("{}p", cfg.resolution)
+                        // Mostra o tamanho real: num ultrawide, 1080p fica 1920×810.
+                        let res_label = |h: u32| {
+                            fit_resolution(nw, nh, h).map(|(fw, fh)| format!("{h}p · {fw}×{fh}"))
                         };
+                        let res_text =
+                            res_label(cfg.resolution).unwrap_or_else(|| native_label.clone());
                         egui::ComboBox::from_id_salt("res")
                             .selected_text(res_text)
                             .width(220.0)
                             .show_ui(ui, |ui| {
                                 ui.selectable_value(&mut cfg.resolution, 0, native_label);
-                                for h in RES_OPTIONS.into_iter().filter(|&h| (h as i32) < nh) {
-                                    ui.selectable_value(&mut cfg.resolution, h, format!("{h}p"));
+                                for h in RES_OPTIONS {
+                                    if let Some(text) = res_label(h) {
+                                        ui.selectable_value(&mut cfg.resolution, h, text);
+                                    }
                                 }
                             });
                         ui.end_row();
@@ -530,9 +598,16 @@ impl ClipApp {
                             });
                         ui.end_row();
                     });
+                    if cfg.seconds > 120 {
+                        let (recording, saving) = disk_use(cfg.seconds, self.video_rate);
+                        hint(ui, &fill(t().disk_use, &[&recording, &saving]));
+                    }
+                    if cfg.seconds > self.max_seconds {
+                        ui.label(RichText::new(t().disk_low).small().color(ACCENT));
+                    }
                     hint(ui, t().q_hints[cfg.quality.index()]);
                     let mon = platform::pick_monitor(&self.monitors, &cfg.monitor);
-                    if cfg.resolution != 0 && mon.is_some_and(|m| (cfg.resolution as i32) < m.height) {
+                    if mon.is_some_and(|m| fit_resolution(m.width, m.height, cfg.resolution).is_some()) {
                         hint(ui, t().scale_hint);
                     }
                     ui.add_space(4.0);
@@ -586,16 +661,16 @@ impl ClipApp {
                 });
             });
         });
-        if resp.should_close() && !self.capturing {
+        if resp.should_close() && self.capturing.is_none() {
             close = true;
         }
 
         // Aplica o que mudou.
-        if change_key {
-            if self.capturing {
+        if let Some(target) = change_key {
+            if self.capturing == Some(target) {
                 self.cancel_capture();
             } else {
-                self.start_capture();
+                self.start_capture(target);
             }
         }
         if pick_dir && let Some(dir) = platform::pick_folder(&cfg.output_dir) {
@@ -626,19 +701,43 @@ impl ClipApp {
             cfg.save();
             *self.shared.config.lock().unwrap() = cfg;
             if needs_restart {
-                self.shared.send(RecCmd::Restart);
+                // Espera parar de clicar no − e no +: reiniciar apaga o buffer.
+                self.restart_at = Some(Instant::now() + Duration::from_secs(1));
             }
             if admin_changed {
                 self.apply_admin();
             }
         }
         if close {
-            if self.capturing {
+            if self.capturing.is_some() {
                 self.cancel_capture();
             }
             self.settings_open = false;
+            self.flush_restart();
         }
     }
+
+    /// Aplica um reinício pendente da gravação.
+    fn flush_restart(&mut self) {
+        if self.restart_at.take().is_some() {
+            self.shared.send(RecCmd::Restart);
+        }
+    }
+}
+
+/// (ocupado enquanto grava, pico ao salvar), em GB, já com o som. Ao salvar,
+/// o buffer, a cópia intermediária e o clipe final existem ao mesmo tempo.
+fn disk_use(seconds: u32, video_rate: f64) -> (String, String) {
+    const GB: f64 = 1_000_000_000.0;
+    let recording = seconds as f64 * (video_rate + AUDIO_BYTES_PER_SEC);
+    let saving = seconds as f64 * (3.0 * video_rate + 2.0 * AUDIO_BYTES_PER_SEC);
+    (format!("{:.1}", recording / GB), format!("{:.1}", saving / GB))
+}
+
+/// Maior tempo que cabe em `free` bytes, considerando o pico ao salvar.
+fn max_seconds_for_disk(free: u64, video_rate: f64) -> u32 {
+    let per_sec = 3.0 * video_rate + 2.0 * AUDIO_BYTES_PER_SEC;
+    ((free as f64 / per_sec) as u32).clamp(SECONDS_OPTIONS[SECONDS_OPTIONS.len() - 1], MAX_SECONDS)
 }
 
 enum Action {
@@ -769,8 +868,13 @@ impl eframe::App for ClipApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
             self.shared.history_dirty.store(true, Ordering::SeqCst);
         }
+        if self.restart_at.is_some_and(|at| Instant::now() >= at) {
+            self.flush_restart();
+        }
         // Fechar = esconder na bandeja.
         if ctx.input(|i| i.viewport().close_requested()) {
+            // Escondida, a janela para de rodar: aplica o que estava pendente.
+            self.flush_restart();
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
         }

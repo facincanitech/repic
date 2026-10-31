@@ -50,11 +50,14 @@ pub fn tray_tooltip(hotkey: &str) -> String {
     lang::fill(lang::t().tray_tip, &[&hotkey])
 }
 
-/// Espera um clipe que esteja sendo salvo terminar (no máximo 15s),
-/// pra não deixar um MP4 pela metade ao sair.
+/// Espera um clipe que esteja sendo salvo terminar, pra não deixar um MP4
+/// pela metade ao sair. Clipe longo demora mais: dá mais tempo pra ele.
 fn wait_for_save(shared: &Shared) {
+    // Sair no meio de uma gravação salva o que já foi gravado.
+    recorder::finish_recording(shared);
     let start = Instant::now();
-    while shared.saving.load(Ordering::SeqCst) && start.elapsed() < Duration::from_secs(15) {
+    let limit = Duration::from_secs((shared.config().seconds as u64 / 4).max(15));
+    while shared.saving.load(Ordering::SeqCst) && start.elapsed() < limit {
         std::thread::sleep(Duration::from_millis(100));
     }
 }
@@ -165,11 +168,18 @@ fn main() -> eframe::Result {
 
             // Atalho global (funciona com o jogo em foco e com a janela fechada).
             let s = shared.clone();
-            hotkey::start(cfg.shortcut, move |ev| match ev {
-                hotkey::Event::Pressed => recorder::hotkey_pressed(s.clone()),
-                hotkey::Event::Captured(c) => {
-                    *s.captured.lock().unwrap() = Some(c);
+            hotkey::start(cfg.shortcut, cfg.record_shortcut, move |ev| match ev {
+                hotkey::Event::Pressed(hotkey::Target::Clip) => recorder::hotkey_pressed(s.clone()),
+                hotkey::Event::Pressed(hotkey::Target::Record) => {
+                    recorder::toggle_recording(s.clone())
+                }
+                hotkey::Event::Captured(target, c) => {
+                    *s.captured.lock().unwrap() = Some((target, c));
                     s.repaint();
+                }
+                hotkey::Event::KeyInUse => {
+                    recorder::notify(&s, lang::t().key_in_use, platform::Toast::Error);
+                    s.set_event(false, lang::t().key_in_use);
                 }
                 hotkey::Event::AdminGame => {
                     recorder::notify(&s, lang::t().toast_admin_game, platform::Toast::Error);
@@ -180,11 +190,13 @@ fn main() -> eframe::Result {
             // Bandeja.
             let open_item = MenuItem::new(lang::t().tray_open, true, None);
             let save_item = MenuItem::new(lang::t().tray_save, true, None);
+            let record_item = MenuItem::new(lang::t().tray_record, true, None);
             let quit_item = MenuItem::new(lang::t().tray_quit, true, None);
             let menu = Menu::new();
             let _ = menu.append_items(&[
                 &open_item,
                 &save_item,
+                &record_item,
                 &PredefinedMenuItem::separator(),
                 &quit_item,
             ]);
@@ -200,9 +212,10 @@ fn main() -> eframe::Result {
                         .ok()
                 });
 
-            let (open_id, save_id, quit_id) = (
+            let (open_id, save_id, record_id, quit_id) = (
                 open_item.id().clone(),
                 save_item.id().clone(),
+                record_item.id().clone(),
                 quit_item.id().clone(),
             );
             let s = shared.clone();
@@ -211,6 +224,8 @@ fn main() -> eframe::Result {
                     s.request_show();
                 } else if ev.id == save_id {
                     recorder::trigger_save(s.clone());
+                } else if ev.id == record_id {
+                    recorder::toggle_recording(s.clone());
                 } else if ev.id == quit_id {
                     quit(&s);
                 }

@@ -873,6 +873,28 @@ mod imp {
             .save_file()
     }
 
+    /// Espaço livre no disco de `path` (a pasta pode nem existir ainda: sobe até achar).
+    pub fn free_disk(path: &Path) -> Option<u64> {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
+        let existing = path.ancestors().find(|p| p.exists())?;
+        let name: Vec<u16> = existing
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let mut free = 0u64;
+        let ok = unsafe {
+            GetDiskFreeSpaceExW(
+                name.as_ptr(),
+                &mut free,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
+        (ok != 0).then_some(free)
+    }
+
     pub fn pick_folder(start: &Path) -> Option<PathBuf> {
         rfd::FileDialog::new()
             .set_title(crate::lang::t().folder_dialog)
@@ -924,6 +946,9 @@ mod imp {
     pub fn save_dialog(_file_name: &str) -> Option<PathBuf> {
         None
     }
+    pub fn free_disk(_path: &Path) -> Option<u64> {
+        None
+    }
     pub fn pick_folder(_start: &Path) -> Option<PathBuf> {
         None
     }
@@ -932,7 +957,8 @@ mod imp {
 pub use imp::{
     already_running, autostart_enabled, beep_error, beep_ok, foreground_admin_app, is_admin,
     relaunch_as_admin,
-    foreground_is_fullscreen, list_monitors, pick_folder, save_dialog, set_autostart, show_window,
+    foreground_is_fullscreen, free_disk, list_monitors, pick_folder, save_dialog, set_autostart,
+    show_window,
     toast,
 };
 

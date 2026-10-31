@@ -1,6 +1,6 @@
 use crate::audio::AudioRing;
 use crate::config::{self, Config};
-use crate::hotkey::Combo;
+use crate::hotkey::{Combo, Target};
 use eframe::egui;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
@@ -32,6 +32,7 @@ pub struct Paths {
     pub ffmpeg: PathBuf,
     pub buffer_dir: PathBuf,
     pub work_dir: PathBuf,
+    pub record_dir: PathBuf,
     pub thumbs_dir: PathBuf,
 }
 
@@ -46,7 +47,13 @@ pub struct Shared {
     pub saving: AtomicBool,
     /// Resultado de "escolher atalho" vindo do teclado (hotkey.rs)
     /// (Some(None) = cancelou).
-    pub captured: Mutex<Option<Option<Combo>>>,
+    pub captured: Mutex<Option<(Target, Option<Combo>)>>,
+    /// Gravando daqui pra frente (o botão de gravar).
+    pub recording: AtomicBool,
+    /// Pediu pra parar: a gravação está terminando de salvar.
+    pub rec_stop: AtomicBool,
+    /// Quando a gravação começou (pra mostrar o tempo).
+    pub rec_started: Mutex<Option<Instant>>,
     pub history_dirty: AtomicBool,
     pub show_requested: AtomicBool,
     pub hwnd: AtomicIsize,
@@ -56,29 +63,31 @@ pub struct Shared {
 
 impl Shared {
     pub fn new(config: Config) -> Arc<Self> {
-        let app = config::app_dir();
         let exe_dir = std::env::current_exe()
             .ok()
             .and_then(|p| p.parent().map(|p| p.to_path_buf()))
             .unwrap_or_else(|| PathBuf::from("."));
         let ext = if cfg!(windows) { ".exe" } else { "" };
-        let find = |name: &str| {
-            let local = exe_dir.join(format!("{name}{ext}"));
-            if local.exists() {
-                local
-            } else {
-                PathBuf::from(name)
-            }
+        let local = exe_dir.join(format!("ffmpeg{ext}"));
+        let ffmpeg = if local.exists() {
+            local
+        } else {
+            PathBuf::from("ffmpeg")
         };
         let temp = std::env::temp_dir().join("RePic");
+        Self::with_paths(config, temp, config::app_dir(), ffmpeg)
+    }
+
+    pub fn with_paths(config: Config, temp: PathBuf, app: PathBuf, ffmpeg: PathBuf) -> Arc<Self> {
         let paths = Paths {
-            ffmpeg: find("ffmpeg"),
+            ffmpeg,
             buffer_dir: temp.join("buffer"),
             work_dir: temp.join("work"),
+            record_dir: temp.join("record"),
             thumbs_dir: app.join("thumbs"),
         };
-        let audio = AudioRing::new(config.audio, config.seconds);
-        let mic = AudioRing::new(config.mic, config.seconds);
+        let audio = AudioRing::new(config.audio, config.seconds, temp.join("audio-pc"));
+        let mic = AudioRing::new(config.mic, config.seconds, temp.join("audio-mic"));
         Arc::new(Self {
             config: Mutex::new(config),
             status: Mutex::new(Status {
@@ -91,6 +100,9 @@ impl Shared {
             mic,
             saving: AtomicBool::new(false),
             captured: Mutex::new(None),
+            recording: AtomicBool::new(false),
+            rec_stop: AtomicBool::new(false),
+            rec_started: Mutex::new(None),
             history_dirty: AtomicBool::new(true),
             show_requested: AtomicBool::new(false),
             hwnd: AtomicIsize::new(0),

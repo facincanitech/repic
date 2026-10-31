@@ -1,6 +1,6 @@
 # RePic
 
-Aperta **F8** e os últimos **30 segundos** da tela viram um clipe.
+Aperta **F8** e os últimos **30 segundos** da tela viram um clipe. Aperta **F9** e ele grava daqui pra frente, como o OBS, até você parar.
 Sem login, sem conta, sem upload, sem overlay. Só um `.exe` leve na bandeja.
 
 > Vídeo é só um monte de pic em sequência. Feito pra meme. Quer usar, usa.
@@ -24,11 +24,11 @@ O app fala português, inglês ou espanhol, conforme o idioma do Windows.
 
 | Opção | Valores |
 |---|---|
-| Atalho | qualquer tecla, sozinha ou com Ctrl/Alt/Shift (a tecla continua funcionando no jogo) |
+| Atalhos | um pra clipar o passado e outro pra começar/parar de gravar: qualquer tecla, sozinha ou com Ctrl/Alt/Shift (a tecla continua funcionando no jogo) |
 | Monitor | o principal do Windows ou qualquer outro |
-| Duração | 15s, 30s, 60s, 90s, 120s |
+| Duração | 15s, 30s, 60s, 90s, 120s, ou no − e + até 2 horas (mostra quanto do disco pode usar) |
 | FPS | **nativo do monitor** (recomendado) ou menos: 240, 165, 144, 120, 60, 30 |
-| Resolução | **nativa do monitor** (recomendado) ou menos: 2160p, 1440p, 1080p, 720p (reduzir usa um pouco de CPU) |
+| Resolução | **nativa do monitor** (recomendado) ou menos: 2160p, 1440p, 1080p, 720p, sem esticar nem cortar (num ultrawide, 1080p fica 1920×810; reduzir usa um pouco de CPU) |
 | Qualidade | Leve, Normal, **Alta** (recomendado), Máxima |
 | Clipar em qualquer lugar | ligado: o atalho vale sempre. Desligado: só com jogo/vídeo em tela cheia |
 | Som do PC | liga/desliga |
@@ -45,8 +45,8 @@ Fica salvo em `%APPDATA%\RePic\config.json`.
 - **Encoder da placa de vídeo**: usa o da placa onde o monitor está ligado (NVIDIA NVENC, AMD AMF ou Intel QuickSync) e só cai pra CPU (x264) se nenhum funcionar. O status na janela mostra qual está em uso.
 - **Captura via Desktop Duplication** (`ddagrab`), direto da GPU. Em notebook com duas placas, cada monitor é capturado pela placa dele.
 - **Buffer em pedaços de 2s** que se reaproveitam em loop (`-segment_wrap`): o disco nunca enche.
-- **Salvar não reprocessa o vídeo**: os pedaços são só emendados (`-c copy`), por isso é instantâneo.
-- **Som do PC e microfone** via WASAPI, guardados na memória e colados exatamente na janela de tempo do vídeo.
+- **Salvar não reprocessa o vídeo**: os pedaços são só emendados (`-c copy`), então um clipe curto sai em segundos (20 minutos levaram ~1 minuto no teste).
+- **Som do PC e microfone** via WASAPI, guardados em arquivos temporários e colados exatamente na janela de tempo do vídeo.
 - **Atalho por Raw Input** (o jeito que os jogos leem o teclado): só observa a tecla, não rouba ela do jogo, e funciona com a janela fechada.
 - App em Rust + egui, sem Electron.
 
@@ -86,7 +86,7 @@ src/
   main.rs      bandeja, janela, liga tudo
   app.rs       interface: grade de clipes, configurações, excluir
   recorder.rs  ffmpeg em loop + salvar clipe
-  audio.rs     som do PC e microfone em buffer circular
+  audio.rs     som do PC e microfone em buffer circular no disco
   hotkey.rs    atalho global (Raw Input)
   lang.rs      textos em português, inglês e espanhol
   platform.rs  coisas específicas do Windows (monitores, registro, diálogos)

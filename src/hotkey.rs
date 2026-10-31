@@ -45,11 +45,33 @@ impl Default for Combo {
     }
 }
 
+impl Combo {
+    /// F9, o padrão do atalho de gravar.
+    pub fn record_default() -> Self {
+        Self {
+            vk: 0x78,
+            scan: 0x43,
+            ..Self::default()
+        }
+    }
+}
+
+/// Qual dos dois atalhos.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Target {
+    /// Salvar o passado.
+    Clip,
+    /// Começar/parar de gravar daqui pra frente.
+    Record,
+}
+
 pub enum Event {
-    /// Apertou o atalho.
-    Pressed,
+    /// Apertou um dos atalhos.
+    Pressed(Target),
     /// Terminou de escolher um atalho novo (None = cancelou com Esc).
-    Captured(Option<Combo>),
+    Captured(Target, Option<Combo>),
+    /// Escolheu a mesma tecla do outro atalho: continua esperando outra.
+    KeyInUse,
     /// Um jogo rodando como administrador veio pra frente e o RePic não é
     /// admin: o atalho não vai chegar.
     AdminGame,
@@ -78,12 +100,29 @@ struct Key {
 #[derive(Default)]
 struct Hook {
     combo: Combo,
-    capturing: bool,
+    record: Combo,
+    capturing: Option<Target>,
     /// A tecla do atalho está pressionada (ignora a repetição de segurar).
     held: bool,
-    /// Último aperto enviado (por qualquer caminho).
+    held_record: bool,
+    /// Último aperto enviado (por qualquer caminho), de cada atalho.
     last_pressed: Option<Instant>,
+    last_record: Option<Instant>,
     tx: Option<Sender<Event>>,
+}
+
+/// Aperto novo de `combo`? Marca a tecla como segurada de qualquer jeito.
+fn new_press(combo: &Combo, held: &mut bool, k: &Key) -> bool {
+    if k.vk != combo.vk || *held {
+        return false; // outra tecla, ou segurando
+    }
+    *held = true;
+    k.mods == (combo.ctrl, combo.alt, combo.shift)
+}
+
+/// Mesma tecla e mesmos modificadores.
+pub fn same_keys(a: &Combo, b: &Combo) -> bool {
+    a.vk == b.vk && a.ctrl == b.ctrl && a.alt == b.alt && a.shift == b.shift
 }
 
 impl Hook {
@@ -95,20 +134,23 @@ impl Hook {
             if k.vk == self.combo.vk {
                 self.held = false;
             }
+            if k.vk == self.record.vk {
+                self.held_record = false;
+            }
             return None;
         }
-        if self.capturing {
+        if let Some(target) = self.capturing {
             // Só aceita a tecla apertada na janela do RePic: senão pegaria
             // o que você estiver digitando em outro programa.
             if !k.ours {
                 return None;
             }
-            self.capturing = false;
             if k.vk == VK_ESCAPE {
-                return Some(Event::Captured(None));
+                self.capturing = None;
+                return Some(Event::Captured(target, None));
             }
             let (ctrl, alt, shift) = k.mods;
-            self.combo = Combo {
+            let new = Combo {
                 vk: k.vk,
                 scan: k.scan,
                 extended: k.extended,
@@ -116,19 +158,36 @@ impl Hook {
                 alt,
                 shift,
             };
-            // Não clipa por causa do mesmo aperto que escolheu a tecla.
-            self.held = true;
-            return Some(Event::Captured(Some(self.combo)));
+            let other = match target {
+                Target::Clip => self.record,
+                Target::Record => self.combo,
+            };
+            if same_keys(&new, &other) {
+                return Some(Event::KeyInUse);
+            }
+            self.capturing = None;
+            // Não dispara por causa do mesmo aperto que escolheu a tecla.
+            match target {
+                Target::Clip => {
+                    self.combo = new;
+                    self.held = true;
+                }
+                Target::Record => {
+                    self.record = new;
+                    self.held_record = true;
+                }
+            }
+            return Some(Event::Captured(target, Some(new)));
         }
-        if k.vk != self.combo.vk {
-            return None;
+        let clip = new_press(&self.combo, &mut self.held, &k);
+        let record = new_press(&self.record, &mut self.held_record, &k);
+        if clip {
+            Some(Event::Pressed(Target::Clip))
+        } else if record {
+            Some(Event::Pressed(Target::Record))
+        } else {
+            None
         }
-        if self.held {
-            return None; // segurando a tecla
-        }
-        self.held = true;
-        let c = self.combo;
-        (k.mods == (c.ctrl, c.alt, c.shift)).then_some(Event::Pressed)
     }
 }
 
@@ -148,19 +207,20 @@ pub fn set_window(hwnd: isize) {
 }
 
 /// A próxima tecla apertada na janela do RePic vira o atalho novo.
-pub fn begin_capture() {
-    with_hook(|h| h.capturing = true);
+pub fn begin_capture(target: Target) {
+    with_hook(|h| h.capturing = Some(target));
 }
 
 pub fn cancel_capture() {
-    with_hook(|h| h.capturing = false);
+    with_hook(|h| h.capturing = None);
 }
 
 /// Começa a escutar o teclado. `handler` roda numa thread própria.
-pub fn start(combo: Combo, handler: impl Fn(Event) + Send + 'static) {
+pub fn start(combo: Combo, record: Combo, handler: impl Fn(Event) + Send + 'static) {
     let (tx, rx) = std::sync::mpsc::channel();
     *HOOK.lock().unwrap() = Some(Hook {
         combo,
+        record,
         tx: Some(tx),
         ..Default::default()
     });
@@ -185,15 +245,19 @@ fn send_event(ev: Event) {
 /// Dois apertos colados (ex.: tecla falhando) contam um só.
 const SAME_PRESS: Duration = Duration::from_millis(400);
 
-fn send_pressed(h: &mut Hook, via: &str) {
-    if h.last_pressed.is_some_and(|t| t.elapsed() < SAME_PRESS) {
-        crate::platform::log(&format!("atalho ({via}): ignorado, mesmo aperto"));
+fn send_pressed(h: &mut Hook, via: &str, target: Target) {
+    let (last, name) = match target {
+        Target::Clip => (&mut h.last_pressed, "atalho"),
+        Target::Record => (&mut h.last_record, "atalho de gravar"),
+    };
+    if last.is_some_and(|t| t.elapsed() < SAME_PRESS) {
+        crate::platform::log(&format!("{name} ({via}): ignorado, mesmo aperto"));
         return;
     }
-    h.last_pressed = Some(Instant::now());
-    crate::platform::log(&format!("atalho ({via}): apertou"));
+    *last = Some(Instant::now());
+    crate::platform::log(&format!("{name} ({via}): apertou"));
     if let Some(tx) = &h.tx {
-        let _ = tx.send(Event::Pressed);
+        let _ = tx.send(Event::Pressed(target));
     }
 }
 
@@ -204,6 +268,9 @@ fn release_if_up(is_down: impl Fn(u32) -> bool) {
         if h.held && !is_down(h.combo.vk) {
             h.held = false;
         }
+        if h.held_record && !is_down(h.record.vk) {
+            h.held_record = false;
+        }
     });
 }
 
@@ -213,7 +280,7 @@ fn dispatch(k: Key) {
         return;
     };
     match h.on_key(k) {
-        Some(Event::Pressed) => send_pressed(h, "Raw Input"),
+        Some(Event::Pressed(target)) => send_pressed(h, "Raw Input", target),
         Some(ev) => {
             if let Some(tx) = &h.tx {
                 let _ = tx.send(ev);
@@ -436,8 +503,58 @@ mod tests {
     fn hook(combo: Combo) -> Hook {
         Hook {
             combo,
+            record: Combo::record_default(),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn each_shortcut_fires_its_own_action() {
+        let mut h = hook(Combo::default());
+        assert!(matches!(
+            h.on_key(key(0x77, true, NONE)),
+            Some(Event::Pressed(Target::Clip))
+        ));
+        assert!(matches!(
+            h.on_key(key(0x78, true, NONE)),
+            Some(Event::Pressed(Target::Record))
+        ));
+        assert!(h.on_key(key(0x79, true, NONE)).is_none());
+    }
+
+    #[test]
+    fn same_key_with_different_modifiers_are_two_shortcuts() {
+        let mut h = hook(Combo::default());
+        h.record = Combo {
+            ctrl: true,
+            ..Combo::default()
+        };
+        assert!(matches!(
+            h.on_key(key(0x77, true, (true, false, false))),
+            Some(Event::Pressed(Target::Record))
+        ));
+        h.on_key(key(0x77, false, NONE));
+        assert!(matches!(
+            h.on_key(key(0x77, true, NONE)),
+            Some(Event::Pressed(Target::Clip))
+        ));
+    }
+
+    #[test]
+    fn capture_refuses_the_other_shortcuts_key() {
+        let mut h = hook(Combo::default());
+        h.capturing = Some(Target::Record);
+        assert!(matches!(
+            h.on_key(key(0x77, true, NONE)),
+            Some(Event::KeyInUse)
+        ));
+        assert_eq!(h.capturing, Some(Target::Record));
+        assert!(matches!(
+            h.on_key(key(0x7A, true, NONE)),
+            Some(Event::Captured(Target::Record, Some(_)))
+        ));
+        assert_eq!(h.record.vk, 0x7A);
+        assert_eq!(h.combo, Combo::default());
     }
 
     fn key(vk: u32, down: bool, mods: (bool, bool, bool)) -> Key {
@@ -452,7 +569,7 @@ mod tests {
     }
 
     fn pressed(e: Option<Event>) -> bool {
-        matches!(e, Some(Event::Pressed))
+        matches!(e, Some(Event::Pressed(_)))
     }
 
     #[test]
@@ -479,11 +596,11 @@ mod tests {
     #[test]
     fn capture_takes_any_key_with_its_modifiers() {
         let mut h = hook(Combo::default());
-        h.capturing = true;
+        h.capturing = Some(Target::Clip);
         // Apertar só o Shift não conta: espera a tecla de verdade.
         assert!(h.on_key(key(0xA0, true, SHIFT)).is_none());
         match h.on_key(key(VK_QUOTE_ABNT2, true, SHIFT)) {
-            Some(Event::Captured(Some(c))) => {
+            Some(Event::Captured(Target::Clip, Some(c))) => {
                 assert_eq!(c.vk, VK_QUOTE_ABNT2);
                 assert!(c.shift && !c.ctrl && !c.alt);
             }
@@ -497,26 +614,26 @@ mod tests {
     fn capture_ignores_keys_typed_in_other_programs() {
         // Escolhendo tecla, mas digitando "n" em outro programa: não pega.
         let mut h = hook(Combo::default());
-        h.capturing = true;
+        h.capturing = Some(Target::Clip);
         let elsewhere = Key {
             ours: false,
             ..key(0x4E, true, NONE)
         };
         assert!(h.on_key(elsewhere).is_none());
-        assert!(h.capturing, "continua esperando a tecla na janela do RePic");
+        assert!(h.capturing.is_some(), "continua esperando a tecla na janela do RePic");
         assert!(matches!(
             h.on_key(key(VK_QUOTE_ABNT2, true, NONE)),
-            Some(Event::Captured(Some(_)))
+            Some(Event::Captured(Target::Clip, Some(_)))
         ));
     }
 
     #[test]
     fn escape_cancels_capture_and_keeps_old_key() {
         let mut h = hook(Combo::default());
-        h.capturing = true;
+        h.capturing = Some(Target::Clip);
         assert!(matches!(
             h.on_key(key(VK_ESCAPE, true, NONE)),
-            Some(Event::Captured(None))
+            Some(Event::Captured(Target::Clip, None))
         ));
         assert_eq!(h.combo, Combo::default());
     }

@@ -8,8 +8,7 @@
 //! - No atalho, juntamos os últimos pedaços prontos sem reprocessar (`-c copy`),
 //!   colamos o áudio (PC + microfone) da mesma janela de tempo e pronto.
 
-use crate::audio;
-use crate::config::{Config, Quality};
+use crate::config::{Config, Quality, fit_resolution, format_duration};
 use crate::lang::{fill, t};
 use crate::platform::{self, Monitor, Toast, hidden_command};
 use crate::state::{Health, RecCmd, Shared};
@@ -52,15 +51,7 @@ impl Capture {
             0 => native_fps,
             f => f.min(native_fps),
         };
-        let scale = mon.and_then(|m| {
-            let h = cfg.resolution;
-            if h == 0 || h as i32 >= m.height {
-                return None;
-            }
-            // Mesma proporção do monitor, largura par (o H.264 exige).
-            let w = ((m.width as f64 * h as f64 / m.height as f64) / 2.0).round() as u32 * 2;
-            Some((w, h))
-        });
+        let scale = mon.and_then(|m| fit_resolution(m.width, m.height, cfg.resolution));
         Self {
             fps,
             scale,
@@ -383,7 +374,10 @@ pub fn start(shared: Arc<Shared>) {
                             }
                             shared.set_status(
                                 Health::Recording,
-                                fill(t().recording, &[&tela, &encoder, &capture.fps, &cfg.seconds]),
+                                fill(
+                                    t().recording,
+                                    &[&tela, &encoder, &capture.fps, &format_duration(cfg.seconds)],
+                                ),
                             );
                         }
                         None => {
@@ -404,6 +398,7 @@ pub fn start(shared: Arc<Shared>) {
                         break;
                     }
                     Ok(RecCmd::Restart) => {
+                        finish_recording(&shared);
                         if let Some(r) = current.take() {
                             r.kill();
                         }
@@ -418,6 +413,8 @@ pub fn start(shared: Arc<Shared>) {
                             None => false,
                         };
                         if died {
+                            // Depois de cair não dá pra emendar: salva o que tem.
+                            finish_recording(&shared);
                             let r = current.take().unwrap();
                             eprintln!("ffmpeg caiu: {}", r.last_error());
                             crashes += 1;
@@ -472,7 +469,12 @@ pub fn trigger_save(shared: Arc<Shared>) {
         platform::log("clipe: salvando");
         notify(&shared, t().toast_clipping, Toast::Busy);
         shared.set_event(true, t().saving);
-        match save_clip(&shared, pressed) {
+        shared.audio.set_hold(true);
+        shared.mic.set_hold(true);
+        let saved = save_clip(&shared, pressed);
+        shared.audio.set_hold(false);
+        shared.mic.set_hold(false);
+        match saved {
             Ok(path) => {
                 let name = path
                     .file_name()
@@ -570,13 +572,41 @@ fn unique_clip_path(dir: &Path, stamp: &str) -> PathBuf {
         .unwrap()
 }
 
+/// Faixa de som bruto. Bruto porque WAV para em 4 GB, e som em 8 canais passa
+/// disso num clipe de 2 horas.
+struct AudioTrack {
+    path: String,
+    sample_rate: u32,
+    channels: u16,
+}
+
+/// Quanto o vídeo gasta no disco por segundo, medido nos pedaços do buffer.
+/// Nunca menos que `MIN_BYTES_PER_SEC`: tela parada gasta pouco, mas um jogo
+/// logo em seguida gasta bem mais.
+pub fn video_bytes_per_sec(shared: &Shared) -> f64 {
+    /// ~14 Mbps, o maior medido em clipes reais na qualidade Alta.
+    const MIN_BYTES_PER_SEC: f64 = 1_750_000.0;
+    let segs = completed_segments(&shared.paths.buffer_dir);
+    let total: u64 = segs
+        .iter()
+        .filter_map(|(f, _)| std::fs::metadata(f).ok())
+        .map(|m| m.len())
+        .sum();
+    let secs = (segs.len() as u32 * SEGMENT_SECS).max(1) as f64;
+    (total as f64 / secs).max(MIN_BYTES_PER_SEC)
+}
+
 /// Argumentos do ffmpeg pra juntar vídeo + faixas de áudio num MP4.
-fn mux_args(video: &str, wavs: &[String], out: &str) -> Vec<String> {
+fn mux_args(video: &str, tracks: &[AudioTrack], out: &str) -> Vec<String> {
     let mut a = vec!["-i".to_string(), video.to_string()];
-    for w in wavs {
-        a.extend(["-i".to_string(), w.clone()]);
+    for t in tracks {
+        a.extend(s(&["-f", "f32le", "-ar"]));
+        a.push(t.sample_rate.to_string());
+        a.push("-ac".into());
+        a.push(t.channels.to_string());
+        a.extend(["-i".to_string(), t.path.clone()]);
     }
-    match wavs.len() {
+    match tracks.len() {
         0 => a.extend(s(&["-c", "copy"])),
         n => {
             a.extend(s(&["-map", "0:v"]));
@@ -592,7 +622,7 @@ fn mux_args(video: &str, wavs: &[String], out: &str) -> Vec<String> {
                     "[a]".into(),
                 ]);
             }
-            a.extend(s(&["-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest"]));
+            a.extend(s(&["-c:v", "copy", "-c:a", "aac", "-ac", "2", "-b:a", "192k", "-shortest"]));
         }
     }
     a.extend(s(&["-movflags", "+faststart", out]));
@@ -624,8 +654,169 @@ fn save_clip(shared: &Shared, pressed: SystemTime) -> Result<PathBuf, String> {
     let video_end = segs.last().unwrap().1;
     let after_press = video_end.duration_since(pressed).unwrap_or_default();
     let wanted = segments_needed(cfg.seconds, after_press);
-    let take = &segs[segs.len().saturating_sub(wanted)..];
+    let take: Vec<PathBuf> = segs[segs.len().saturating_sub(wanted)..]
+        .iter()
+        .map(|(f, _)| f.clone())
+        .collect();
+    assemble(shared, &take, video_end)
+}
 
+// ---------------------------------------------------------------------------
+// Gravar daqui pra frente (o botão de gravar, tipo OBS)
+//
+// Não abre outro ffmpeg: guarda uma cópia dos mesmos pedaços de 2s enquanto
+// estiver gravando. Assim não pesa mais na placa, e clipar o passado continua
+// funcionando junto. Como corta nos pedaços, pode começar e terminar até 2s a mais.
+
+/// Começa a gravar ou, se já está gravando, pede pra parar e salvar.
+pub fn toggle_recording(shared: Arc<Shared>) {
+    if shared.recording.load(Ordering::SeqCst) {
+        if !shared.rec_stop.swap(true, Ordering::SeqCst) {
+            platform::log("gravação: parando");
+            notify(&shared, t().toast_rec_saving, Toast::Busy);
+            shared.set_event(true, t().toast_rec_saving);
+        }
+        shared.repaint();
+        return;
+    }
+    if shared.recording.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    shared.rec_stop.store(false, Ordering::SeqCst);
+    *shared.rec_started.lock().unwrap() = Some(Instant::now());
+    // O som guardado não pode vencer enquanto a gravação durar.
+    shared.audio.set_hold(true);
+    shared.mic.set_hold(true);
+    let started = SystemTime::now();
+    platform::log("gravação: começou");
+    notify(&shared, t().toast_rec_started, Toast::Ok);
+    shared.repaint();
+    std::thread::spawn(move || {
+        let result = record(&shared, started);
+        shared.audio.set_hold(false);
+        shared.mic.set_hold(false);
+        match result {
+            Ok(path) => {
+                let name = path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
+                platform::log(&format!("gravação: salva {name}"));
+                notify(&shared, t().toast_rec_saved, Toast::Ok);
+                shared.set_event(true, fill(t().saved, &[&name]));
+                shared.history_dirty.store(true, Ordering::SeqCst);
+            }
+            Err(e) => {
+                platform::log(&format!("gravação: falhou: {e}"));
+                let msg = fill(t().save_failed, &[&e]);
+                notify(&shared, &msg, Toast::Error);
+                shared.set_event(false, msg);
+            }
+        }
+        *shared.rec_started.lock().unwrap() = None;
+        shared.rec_stop.store(false, Ordering::SeqCst);
+        shared.recording.store(false, Ordering::SeqCst);
+        shared.repaint();
+    });
+}
+
+/// Termina a gravação em andamento e espera salvar. A gravação em loop vai ser
+/// reiniciada ou fechada, e os pedaços novos não poderiam se misturar com ela.
+pub fn finish_recording(shared: &Shared) {
+    if !shared.recording.load(Ordering::SeqCst) {
+        return;
+    }
+    shared.rec_stop.store(true, Ordering::SeqCst);
+    while shared.recording.load(Ordering::SeqCst) {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+/// Pedaços copiados até agora.
+#[derive(Default)]
+struct Recorded {
+    files: Vec<PathBuf>,
+    last_end: Option<SystemTime>,
+    bytes: u64,
+}
+
+/// Copia os pedaços que fecharam depois do começo da gravação. O buffer vai
+/// reaproveitar esses arquivos, então precisa ser cópia de verdade.
+fn collect_segments(shared: &Shared, started: SystemTime, rec: &mut Recorded) -> Result<(), String> {
+    for (seg, end) in completed_segments(&shared.paths.buffer_dir) {
+        if end < started || rec.last_end.is_some_and(|last| end <= last) {
+            continue;
+        }
+        let copy = shared
+            .paths
+            .record_dir
+            .join(format!("rec_{:06}.ts", rec.files.len()));
+        rec.bytes += std::fs::copy(&seg, &copy).map_err(|e| e.to_string())?;
+        rec.files.push(copy);
+        rec.last_end = Some(end);
+    }
+    Ok(())
+}
+
+/// Disco quase cheio? Precisa sobrar pro que falta: montar o vídeo e o som.
+fn disk_nearly_full(free: u64, recorded: u64) -> bool {
+    const RESERVE: u64 = 2_000_000_000;
+    free < recorded.saturating_mul(2).saturating_add(RESERVE)
+}
+
+fn record(shared: &Shared, started: SystemTime) -> Result<PathBuf, String> {
+    let dir = &shared.paths.record_dir;
+    clean_dir(dir);
+    let mut rec = Recorded::default();
+    let mut last_disk_check = Instant::now();
+    loop {
+        if let Err(e) = collect_segments(shared, started, &mut rec) {
+            // Disco cheio, por exemplo: salva o que já tem.
+            platform::log(&format!("gravação: não consegui copiar um pedaço: {e}"));
+            break;
+        }
+        if shared.rec_stop.load(Ordering::SeqCst) {
+            break;
+        }
+        if last_disk_check.elapsed() >= Duration::from_secs(5) {
+            last_disk_check = Instant::now();
+            if platform::free_disk(dir).is_some_and(|free| disk_nearly_full(free, rec.bytes)) {
+                platform::log("gravação: disco quase cheio, parando");
+                shared.set_event(false, t().rec_disk_full);
+                notify(shared, t().rec_disk_full, Toast::Busy);
+                break;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(300));
+    }
+
+    // O pedaço em andamento faz parte da gravação: espera ele fechar.
+    let stopped = SystemTime::now();
+    let deadline = Instant::now() + Duration::from_millis(SEGMENT_SECS as u64 * 1000 + 1500);
+    while rec.last_end.is_none_or(|end| end < stopped) && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(100));
+        if collect_segments(shared, started, &mut rec).is_err() {
+            break;
+        }
+    }
+    let Some(video_end) = rec.last_end else {
+        return Err(t().buffer_empty.into());
+    };
+
+    // A pasta de trabalho é uma só: espera um clipe que esteja salvando.
+    while shared.saving.swap(true, Ordering::SeqCst) {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let result = assemble(shared, &rec.files, video_end);
+    shared.saving.store(false, Ordering::SeqCst);
+    clean_dir(dir);
+    result
+}
+
+/// Junta os pedaços com o som da mesma janela de tempo num MP4 na pasta de clipes.
+fn assemble(shared: &Shared, take: &[PathBuf], video_end: SystemTime) -> Result<PathBuf, String> {
+    let cfg = shared.config();
     let work = &shared.paths.work_dir;
     clean_dir(work);
 
@@ -633,7 +824,7 @@ fn save_clip(shared: &Shared, pressed: SystemTime) -> Result<PathBuf, String> {
     let list = work.join("list.txt");
     let body: String = take
         .iter()
-        .map(|(f, _)| {
+        .map(|f| {
             format!(
                 "file '{}'\n",
                 p(f).replace('\\', "/").replace('\'', "'\\''")
@@ -665,26 +856,28 @@ fn save_clip(shared: &Shared, pressed: SystemTime) -> Result<PathBuf, String> {
     let duration =
         probe_duration(shared, &video).unwrap_or((take.len() as u32 * SEGMENT_SECS) as f64);
     let duration = Duration::from_secs_f64(duration.max(0.1));
-    let mut wavs = Vec::new();
+    let mut tracks = Vec::new();
     if let Some(start) = video_end.checked_sub(duration + VIDEO_LATENCY) {
         for (on, ring, name) in [
-            (cfg.audio, &shared.audio, "pc.wav"),
-            (cfg.mic, &shared.mic, "mic.wav"),
+            (cfg.audio, &shared.audio, "pc.raw"),
+            (cfg.mic, &shared.mic, "mic.raw"),
         ] {
             if on {
-                let wav = work.join(name);
-                let rendered = ring.render(start, duration);
+                let path = work.join(name);
+                let rendered = ring.render_to_file(start, duration, &path)?;
                 // Distingue "clipe mudo" de "som baixo" sem precisar do arquivo.
-                let peak = rendered.samples.iter().fold(0f32, |m, s| m.max(s.abs()));
-                platform::log(&format!("clipe: áudio {name}, pico {peak:.4}"));
-                audio::write_wav(&wav, &rendered)?;
-                wavs.push(p(&wav));
+                platform::log(&format!("clipe: áudio {name}, pico {:.4}", rendered.peak));
+                tracks.push(AudioTrack {
+                    path: p(&path),
+                    sample_rate: rendered.sample_rate,
+                    channels: rendered.channels,
+                });
             }
         }
     }
 
     // 3) Arquivo final.
-    let args = mux_args(&p(&video), &wavs, &p(&out));
+    let args = mux_args(&p(&video), &tracks, &p(&out));
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     run_ffmpeg(shared, &args)?;
 
@@ -797,9 +990,11 @@ mod tests {
         assert_eq!(Capture::resolve(&cfg, Some(&m)).fps, 74);
         cfg.frame_rate = 30;
         assert_eq!(Capture::resolve(&cfg, Some(&m)).fps, 30);
-        // 720p num ultrawide mantém a proporção, com largura par.
+        // 720p e 1080p num ultrawide mantêm a proporção, com medidas pares.
         cfg.resolution = 720;
-        assert_eq!(Capture::resolve(&cfg, Some(&m)).scale, Some((1706, 720)));
+        assert_eq!(Capture::resolve(&cfg, Some(&m)).scale, Some((1280, 540)));
+        cfg.resolution = 1080;
+        assert_eq!(Capture::resolve(&cfg, Some(&m)).scale, Some((1920, 810)));
         // "Reduzir" pra 1440p num monitor de 1080: fica nativo.
         cfg.resolution = 1440;
         assert_eq!(Capture::resolve(&cfg, Some(&m)).scale, None);
@@ -824,9 +1019,15 @@ mod tests {
 
     #[test]
     fn mux_mixes_pc_and_mic() {
-        let a = mux_args("v.mp4", &["pc.wav".into(), "mic.wav".into()], "o.mp4");
+        let track = |path: &str| AudioTrack {
+            path: path.into(),
+            sample_rate: 48_000,
+            channels: 2,
+        };
+        let a = mux_args("v.mp4", &[track("pc.raw"), track("mic.raw")], "o.mp4");
         assert!(a.contains(&"[1:a][2:a]amix=inputs=2:duration=first:normalize=0[a]".to_string()));
-        let a = mux_args("v.mp4", &["pc.wav".into()], "o.mp4");
+        assert!(a.contains(&"f32le".to_string()) && a.contains(&"48000".to_string()));
+        let a = mux_args("v.mp4", &[track("pc.raw")], "o.mp4");
         assert!(a.contains(&"1:a".to_string()) && !a.iter().any(|x| x.contains("amix")));
         let a = mux_args("v.mp4", &[], "o.mp4");
         assert!(!a.contains(&"-c:a".to_string()));
@@ -839,6 +1040,99 @@ mod tests {
         // Fechou 1,4s depois do aperto: precisa de mais um pra não perder o começo.
         assert_eq!(segments_needed(30, Duration::from_millis(1400)), 16);
         assert_eq!(segments_needed(15, Duration::from_millis(500)), 8);
+    }
+
+    #[test]
+    fn stops_recording_before_filling_the_disk() {
+        const GB: u64 = 1_000_000_000;
+        assert!(!disk_nearly_full(20 * GB, 5 * GB));
+        // 5 GB gravados precisam de mais 10 GB pra montar, fora a folga.
+        assert!(disk_nearly_full(11 * GB, 5 * GB));
+        assert!(disk_nearly_full(GB, 0));
+    }
+
+    /// Passa pelo caminho real, com ffmpeg e arquivos de verdade, sem capturar
+    /// a tela nem o teclado: `cargo test --release live_record -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn live_record() {
+        let root = std::env::temp_dir().join(format!("repic-rec-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let ffmpeg = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/release/ffmpeg.exe");
+        let out = root.join("clipes");
+        let cfg = Config {
+            notify: false,
+            mic: false,
+            audio: true,
+            output_dir: out.clone(),
+            ..Config::default()
+        };
+        let shared = Shared::with_paths(cfg, root.join("tmp"), root.join("app"), ffmpeg.clone());
+        clean_dir(&shared.paths.buffer_dir);
+        let seg_pattern = shared.paths.buffer_dir.join("seg_%03d.ts");
+        let mut source = std::process::Command::new(&ffmpeg)
+            .args(["-hide_banner", "-loglevel", "error", "-re", "-f", "lavfi"])
+            .args(["-i", "testsrc=s=320x180:r=30", "-t", "20"])
+            .args(["-c:v", "libx264", "-preset", "ultrafast", "-g", "60", "-f", "segment"])
+            .args(["-segment_time", "2", "-segment_wrap", "8", "-segment_format", "mpegts"])
+            .args(["-reset_timestamps", "1"])
+            .arg(seg_pattern)
+            .spawn()
+            .unwrap();
+        // Som de mentira chegando como na captura real.
+        let ring = shared.audio.clone();
+        let tone = std::thread::spawn(move || {
+            for _ in 0..1800 {
+                ring.push(vec![0.25f32; 960]);
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        });
+        let sleep = |s| std::thread::sleep(Duration::from_secs(s));
+        sleep(3);
+        toggle_recording(shared.clone());
+        assert!(shared.recording.load(Ordering::SeqCst));
+        sleep(3);
+        // Clipar o passado no meio da gravação tem que funcionar.
+        trigger_save(shared.clone());
+        sleep(5);
+        toggle_recording(shared.clone());
+        finish_recording(&shared);
+        while shared.saving.load(Ordering::SeqCst) {
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        let _ = source.kill();
+        let _ = source.wait();
+        let _ = tone.join();
+
+        let mut clips: Vec<PathBuf> = std::fs::read_dir(&out)
+            .unwrap()
+            .flatten()
+            .map(|e| e.path())
+            .collect();
+        clips.sort();
+        assert_eq!(clips.len(), 2, "devia ter o clipe e a gravação: {clips:?}");
+        for clip in &clips {
+            let o = std::process::Command::new(&ffmpeg)
+                .args(["-hide_banner", "-i"])
+                .arg(clip)
+                .args(["-vn", "-af", "volumedetect", "-f", "null", "-"])
+                .output()
+                .unwrap();
+            let text = String::from_utf8_lossy(&o.stderr);
+            let duration = parse_duration(&text).unwrap();
+            let max = text
+                .split("max_volume: ")
+                .nth(1)
+                .and_then(|r| r.split(' ').next())
+                .and_then(|v| v.parse::<f64>().ok())
+                .unwrap();
+            println!("{clip:?}: {duration:.1}s, pico {max} dB");
+            assert!(max > -30.0, "clipe sem som: {clip:?}");
+            assert!(duration >= 4.0, "curto demais: {clip:?}");
+        }
+        assert!(std::fs::read_dir(&shared.paths.record_dir).unwrap().next().is_none());
+        shared.audio.clear();
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

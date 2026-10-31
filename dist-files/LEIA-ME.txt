@@ -2,6 +2,7 @@ REPIC
 =====
 
 Aperte F8 e os últimos 30 segundos da tela viram um clipe.
+Aperte F9 pra começar a gravar daqui pra frente, e F9 de novo pra parar.
 Ao abrir, aceite rodar como administrador: assim o atalho funciona
 até em jogos que rodam como administrador.
 Os clipes vão para: Vídeos\RePic
