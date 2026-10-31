@@ -61,7 +61,7 @@
   .cta svg { width: 20px; height: 20px; }
   .cta.alt { background: transparent; color: var(--text); box-shadow: inset 0 0 0 2px var(--accent); margin-left: 8px; }
   .cta.alt:hover { background: var(--accent); color: #fff; }
-  @media (max-width: 560px) { .cta { width: 100%; justify-content: center; } .cta.alt { margin: 10px 0 0; } }
+  @media (max-width: 560px) { .cta { width: calc(100% - 32px); justify-content: center; } .cta.alt { margin: 10px 0 0; } }
   .meta { margin-top: 14px; font-size: 14px; color: var(--muted); }
   .meta span + span::before { content: "·"; margin: 0 8px; opacity: .6; }
 
