@@ -127,6 +127,8 @@ pub struct Config {
     pub record_shortcut: Combo,
     /// Limite de tamanho da gravação, em MB. 0 = sem limite.
     pub record_limit_mb: u32,
+    /// Consulta o GitHub pra avisar de versão nova.
+    pub check_updates: bool,
     /// Captura o som do PC (o que sai nos fones/caixas).
     pub audio: bool,
     /// Captura o microfone padrão do Windows.
@@ -156,6 +158,7 @@ impl Default for Config {
             shortcut: Combo::default(),
             record_shortcut: Combo::record_default(),
             record_limit_mb: 0,
+            check_updates: true,
             audio: true,
             mic: false,
             anywhere: true,

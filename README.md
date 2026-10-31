@@ -35,6 +35,7 @@ O app fala português, inglês ou espanhol, conforme o idioma do Windows.
 | Som do PC | liga/desliga |
 | Microfone | liga/desliga (usa o microfone padrão do Windows) |
 | Avisar na tela ao clipar | "Clipando…" / "Clipe gravado ✓" no canto, por cima do jogo e fora do vídeo. Desligado, avisa com som |
+| Avisar quando tiver versão nova | ligado: consulta o GitHub ao abrir e a cada 6 horas. Aparece um botão **Atualizar** na janela, que baixa, confere e instala sozinho. Clipes e configurações não saem do PC |
 | Iniciar com o Windows | abre escondido na bandeja, já gravando |
 | Rodar como administrador | **ligado** (padrão): clipa até jogos que rodam como admin. Iniciando com o Windows, não pede confirmação |
 | Pasta dos clipes | onde você quiser |

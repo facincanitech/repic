@@ -1,6 +1,7 @@
 use crate::audio::AudioRing;
 use crate::config::{self, Config};
 use crate::hotkey::{Combo, Target};
+use crate::update::UpdateState;
 use eframe::egui;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, Ordering};
@@ -56,6 +57,7 @@ pub struct Shared {
     pub rec_started: Mutex<Option<Instant>>,
     /// Tamanho previsto da gravação até agora, pro medidor.
     pub rec_bytes: AtomicU64,
+    pub update: Mutex<UpdateState>,
     /// Até quando outro aviso fica na tela sem o medidor passar por cima.
     pub toast_until: Mutex<Option<Instant>>,
     pub history_dirty: AtomicBool,
@@ -108,6 +110,7 @@ impl Shared {
             rec_stop: AtomicBool::new(false),
             rec_started: Mutex::new(None),
             rec_bytes: AtomicU64::new(0),
+            update: Mutex::new(UpdateState::None),
             toast_until: Mutex::new(None),
             history_dirty: AtomicBool::new(true),
             show_requested: AtomicBool::new(false),

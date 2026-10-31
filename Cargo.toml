@@ -1,6 +1,6 @@
 [package]
 name = "repic"
-version = "0.4.3"
+version = "0.4.4"
 edition = "2024"
 description = "Clipador leve: aperta F8 e salva os ultimos segundos da tela"
 
@@ -16,6 +16,7 @@ eframe = { version = "0.36.2", default-features = false, features = ["default_fo
 image = { version = "0.25.10", default-features = false, features = ["jpeg"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+sha2 = "0.11.1"
 tray-icon = "0.26.1"
 
 [build-dependencies]

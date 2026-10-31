@@ -12,6 +12,7 @@ use crate::lang::{fill, t};
 use crate::platform::{self, Monitor};
 use crate::recorder;
 use crate::state::{Health, RecCmd, Shared};
+use crate::update::{self, UpdateState};
 use eframe::egui::{self, Color32, CornerRadius, RichText, Stroke, Vec2};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -289,6 +290,42 @@ impl ClipApp {
         {
             ui.label(RichText::new(msg).color(if *ok { OK_GREEN } else { ACCENT }));
         }
+        self.update_banner(ui);
+    }
+
+    /// Avisa de versão nova, com o botão de atualizar.
+    fn update_banner(&self, ui: &mut egui::Ui) {
+        let state = self.shared.update.lock().unwrap().clone();
+        if state == UpdateState::None {
+            return;
+        }
+        ui.add_space(4.0);
+        ui.horizontal(|ui| match state {
+            UpdateState::Available(release) => {
+                let text = fill(t().update_available, &[&release.version]);
+                ui.label(RichText::new(text).color(OK_GREEN).strong());
+                // Instalar fecha o RePic: não pode no meio de uma gravação.
+                let idle = !self.shared.recording.load(Ordering::SeqCst)
+                    && !self.shared.saving.load(Ordering::SeqCst);
+                let btn = ui
+                    .add_enabled(idle, egui::Button::new(t().update_btn))
+                    .on_disabled_hover_text(t().update_busy);
+                if btn.clicked() {
+                    update::install(self.shared.clone());
+                }
+            }
+            UpdateState::Working => {
+                ui.spinner();
+                ui.label(t().update_working);
+            }
+            UpdateState::Failed => {
+                ui.label(RichText::new(t().update_failed).color(ACCENT));
+                if ui.button(t().update_site).clicked() {
+                    platform::open_url(update::SITE_URL);
+                }
+            }
+            UpdateState::None => {}
+        });
     }
 
     // --- Grade de clipes -------------------------------------------------
@@ -695,6 +732,9 @@ impl ClipApp {
                 section(ui, t().sec_system, |ui| {
                     ui.checkbox(&mut autostart, t().autostart);
                     hint(ui, t().autostart_hint);
+                    ui.add_space(4.0);
+                    ui.checkbox(&mut cfg.check_updates, t().update_check);
+                    hint(ui, t().update_check_hint);
                     ui.add_space(4.0);
                     ui.checkbox(&mut cfg.admin, t().admin);
                     hint(ui, t().admin_hint);

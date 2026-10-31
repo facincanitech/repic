@@ -9,6 +9,7 @@ mod lang;
 mod platform;
 mod recorder;
 mod state;
+mod update;
 
 use eframe::egui;
 use state::{RecCmd, Shared};
@@ -120,6 +121,7 @@ fn main() -> eframe::Result {
     audio::start(shared.audio.clone(), audio::Source::Loopback);
     audio::start(shared.mic.clone(), audio::Source::Mic);
     recorder::start(shared.clone());
+    update::start(shared.clone());
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()

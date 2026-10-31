@@ -1023,6 +1023,11 @@ pub enum Signal {
 
 pub use imp::{listen_signals, signal_other};
 
+/// Abre um site no navegador padrão.
+pub fn open_url(url: &str) {
+    open_path(Path::new(url));
+}
+
 /// Abre um arquivo/pasta com o programa padrão.
 pub fn open_path(path: &Path) {
     #[cfg(windows)]

@@ -1,5 +1,5 @@
 ; Instalador do RePic (Inno Setup 6).
-; Compilar: iscc /DMyAppVersion=0.4.3 /DFfmpegExe=caminho\ffmpeg.exe installer\repic.iss
+; Compilar: iscc /DMyAppVersion=0.4.4 /DFfmpegExe=caminho\ffmpeg.exe installer\repic.iss
 ; Sai em dist\RePic-Setup.exe.
 
 #ifndef MyAppVersion
@@ -67,6 +67,8 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 
 [Run]
 Filename: "{app}\RePic.exe"; Description: "{cm:LaunchProgram,RePic}"; Flags: nowait postinstall skipifsilent
+; Atualização pelo botão do app: instala sem janelas e reabre sozinho.
+Filename: "{app}\RePic.exe"; Flags: nowait skipifnotsilent
 
 [UninstallRun]
 ; Fecha o RePic (e o ffmpeg dele) antes de apagar os arquivos. Como admin,
