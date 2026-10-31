@@ -97,6 +97,7 @@ fn main() -> eframe::Result {
     }
     // Aberto pelo "Iniciar com o Windows": começa escondido na bandeja.
     let start_hidden = has_arg("--tray");
+    platform::log(concat!("----- RePic v", env!("CARGO_PKG_VERSION"), " abriu -----"));
     let cfg = config::Config::load();
 
     if cfg.admin && !platform::is_admin() {

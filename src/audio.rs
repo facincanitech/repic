@@ -431,6 +431,12 @@ fn run_once(ring: &Arc<AudioRing>, source: Source) -> Result<(), String> {
         SampleFormat::I16 => build::<i16>(&device, config, ring, &failed),
         SampleFormat::I32 => build::<i32>(&device, config, ring, &failed),
         SampleFormat::U16 => build::<u16>(&device, config, ring, &failed),
+        // Cada placa de som entrega um formato: recusar algum deixava o clipe mudo.
+        SampleFormat::U8 => build::<u8>(&device, config, ring, &failed),
+        SampleFormat::I8 => build::<i8>(&device, config, ring, &failed),
+        SampleFormat::I24 => build::<cpal::I24>(&device, config, ring, &failed),
+        SampleFormat::I64 => build::<i64>(&device, config, ring, &failed),
+        SampleFormat::F64 => build::<f64>(&device, config, ring, &failed),
         other => return Err(format!("formato de áudio não suportado: {other:?}")),
     }?;
     stream.play().map_err(|e| e.to_string())?;
