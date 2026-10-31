@@ -267,6 +267,10 @@ fn run_once(ring: &Arc<AudioRing>, source: Source) -> Result<(), String> {
     Ok(())
 }
 
+fn stops_capture(kind: cpal::ErrorKind) -> bool {
+    kind != cpal::ErrorKind::Xrun
+}
+
 fn build<T>(
     device: &cpal::Device,
     config: cpal::StreamConfig,
@@ -279,6 +283,7 @@ where
 {
     let ring = ring.clone();
     let failed = failed.clone();
+    let mut xrun_logged = false;
     // No WASAPI, abrir um stream de *entrada* num dispositivo de *saída*
     // liga o modo loopback automaticamente. No microfone é entrada normal.
     device
@@ -288,6 +293,15 @@ where
                 ring.push(data.iter().map(|s| s.to_sample::<f32>()).collect());
             },
             move |err| {
+                // Xrun é só um salto no áudio, comum em call: a captura continua.
+                // Reiniciar aqui apagava o buffer sem parar e o clipe saía mudo.
+                if !stops_capture(err.kind()) {
+                    if !xrun_logged {
+                        crate::platform::log(&format!("áudio: salto na captura: {err}"));
+                        xrun_logged = true;
+                    }
+                    return;
+                }
                 crate::platform::log(&format!("áudio: a captura caiu: {err}"));
                 failed.store(true, Ordering::Relaxed);
             },
@@ -354,6 +368,12 @@ mod tests {
         assert!(a.samples[..5].iter().all(|&s| s == 1.0)); // 0.5s..1.0s
         assert!(a.samples[5..15].iter().all(|&s| s == 0.0)); // buraco
         assert!(a.samples[15..20].iter().all(|&s| s == 2.0)); // 2.0s..2.5s
+    }
+
+    #[test]
+    fn xrun_does_not_stop_capture() {
+        assert!(!stops_capture(cpal::ErrorKind::Xrun));
+        assert!(stops_capture(cpal::ErrorKind::DeviceBusy));
     }
 
     /// Captura o som do PC de verdade por 4s. Rodar com algo tocando:
