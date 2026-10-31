@@ -26,7 +26,7 @@ O app fala português, inglês ou espanhol, conforme o idioma do Windows.
 |---|---|
 | Atalhos | um pra clipar o passado e outro pra começar/parar de gravar: qualquer tecla, sozinha ou com Ctrl/Alt/Shift (a tecla continua funcionando no jogo) |
 | Monitor | o principal do Windows ou qualquer outro |
-| Duração | 15s, 30s, 60s, 90s, 120s, ou no − e + até 2 horas (mostra quanto do disco pode usar) |
+| Duração | digitada, em segundos, minutos ou horas, de 15 segundos até 2 horas (mostra quanto do disco pode usar) |
 | FPS | **nativo do monitor** (recomendado) ou menos: 240, 165, 144, 120, 60, 30 |
 | Resolução | **nativa do monitor** (recomendado) ou menos: 2160p, 1440p, 1080p, 720p, sem esticar nem cortar (num ultrawide, 1080p fica 1920×810; reduzir usa um pouco de CPU) |
 | Qualidade | Leve, Normal, **Alta** (recomendado), Máxima |

@@ -2,8 +2,9 @@
 //! e as configurações num modal.
 
 use crate::config::{
-    FPS_OPTIONS, MAX_SECONDS, MIN_SECONDS, Quality, RES_OPTIONS, SECONDS_OPTIONS, fit_resolution,
-    format_duration, step_down, step_up,
+    FPS_OPTIONS, MAX_SECONDS, Quality, RES_OPTIONS, UNITS, best_unit, duration_from_input,
+    fit_resolution,
+    format_duration,
 };
 use crate::hotkey::{self, Target};
 use crate::lang::{fill, t};
@@ -76,6 +77,9 @@ pub struct ClipApp {
     video_rate: f64,
     /// Maior duração que cabe no disco agora.
     max_seconds: u32,
+    /// O que está no campo de duração, e a unidade dele em segundos.
+    duration_text: String,
+    duration_unit: u32,
     /// Quando reiniciar a gravação por causa de uma configuração nova.
     restart_at: Option<Instant>,
     /// Aberto com --tray: quadros que faltam pra esconder a janela (o eframe
@@ -99,6 +103,8 @@ impl ClipApp {
             autostart: platform::autostart_enabled(),
             video_rate: 0.0,
             max_seconds: MAX_SECONDS,
+            duration_text: String::new(),
+            duration_unit: 1,
             restart_at: None,
         }
     }
@@ -402,7 +408,20 @@ impl ClipApp {
 
     // --- Configurações ---------------------------------------------------
 
+    /// Põe a duração no campo: mantém a unidade escolhida se der número inteiro.
+    fn show_duration(&mut self, seconds: u32) {
+        if !UNITS.contains(&self.duration_unit)
+            || seconds % self.duration_unit != 0
+            || self.duration_text.is_empty()
+        {
+            self.duration_unit = best_unit(seconds);
+        }
+        self.duration_text = (seconds / self.duration_unit).to_string();
+    }
+
     fn open_settings(&mut self) {
+        // Ao abrir, sempre a forma mais simples: 7200 aparece como 2 horas.
+        self.duration_text.clear();
         self.monitors = platform::list_monitors();
         self.autostart = platform::autostart_enabled();
         // O buffer fica na pasta temporária: é o disco dela que limita o tempo.
@@ -410,6 +429,7 @@ impl ClipApp {
         self.max_seconds = platform::free_disk(&self.shared.paths.buffer_dir)
             .map(|free| max_seconds_for_disk(free, self.video_rate))
             .unwrap_or(MAX_SECONDS);
+        self.show_duration(self.shared.config().seconds);
         self.settings_open = true;
     }
 
@@ -447,6 +467,7 @@ impl ClipApp {
         let before = cfg.clone();
         let mut autostart = self.autostart;
         let mut change_key: Option<Target> = None;
+        let mut commit_duration = false;
         let mut pick_dir = false;
         let mut close = false;
 
@@ -516,23 +537,27 @@ impl ClipApp {
 
                         ui.label(t().duration);
                         ui.horizontal(|ui| {
-                            let label = |s: u32| fill(t().last_secs, &[&format_duration(s)]);
-                            egui::ComboBox::from_id_salt("dur")
-                                .selected_text(label(cfg.seconds))
+                            let field = egui::TextEdit::singleline(&mut self.duration_text)
+                                .desired_width(56.0)
+                                .char_limit(5);
+                            let typed = ui.add(field);
+                            // Só número inteiro: "2:01" nem tem como entrar.
+                            self.duration_text.retain(|c| c.is_ascii_digit());
+                            commit_duration |= typed.lost_focus();
+                            let number = self.duration_text.parse::<u32>().unwrap_or(0);
+                            let name = |unit: u32| {
+                                let forms = t().units[UNITS.iter().position(|u| *u == unit).unwrap_or(0)];
+                                forms[usize::from(number != 1)]
+                            };
+                            let before_unit = self.duration_unit;
+                            egui::ComboBox::from_id_salt("dur_unit")
+                                .selected_text(name(self.duration_unit))
                                 .show_ui(ui, |ui| {
-                                    for s in SECONDS_OPTIONS {
-                                        ui.selectable_value(&mut cfg.seconds, s, label(s));
+                                    for unit in UNITS {
+                                        ui.selectable_value(&mut self.duration_unit, unit, name(unit));
                                     }
                                 });
-                            let can_down = cfg.seconds > MIN_SECONDS;
-                            if ui.add_enabled(can_down, egui::Button::new("−")).clicked() {
-                                cfg.seconds = step_down(cfg.seconds);
-                            }
-                            let next = step_up(cfg.seconds);
-                            let can_up = next > cfg.seconds && next <= self.max_seconds;
-                            if ui.add_enabled(can_up, egui::Button::new("+")).clicked() {
-                                cfg.seconds = next;
-                            }
+                            commit_duration |= self.duration_unit != before_unit;
                         });
                         ui.end_row();
 
@@ -598,6 +623,7 @@ impl ClipApp {
                             });
                         ui.end_row();
                     });
+                    hint(ui, &fill(t().duration_limit, &[&format_duration(self.max_seconds)]));
                     if cfg.seconds > 120 {
                         let (recording, saving) = disk_use(cfg.seconds, self.video_rate);
                         hint(ui, &fill(t().disk_use, &[&recording, &saving]));
@@ -682,6 +708,16 @@ impl ClipApp {
                 Err(e) => self.shared.set_event(false, fill(t().autostart_failed, &[&e])),
             }
         }
+        // A duração só vale ao sair do campo: digitar "120" não pode reiniciar
+        // a gravação em 1, 12 e 120.
+        if commit_duration || close {
+            if let Ok(value) = self.duration_text.parse::<u32>()
+                && value.saturating_mul(self.duration_unit) != cfg.seconds
+            {
+                cfg.seconds = duration_from_input(value, self.duration_unit, self.max_seconds);
+            }
+            self.show_duration(cfg.seconds);
+        }
         if cfg != before {
             let needs_restart =
                 cfg.frame_rate != before.frame_rate
@@ -737,7 +773,8 @@ fn disk_use(seconds: u32, video_rate: f64) -> (String, String) {
 /// Maior tempo que cabe em `free` bytes, considerando o pico ao salvar.
 fn max_seconds_for_disk(free: u64, video_rate: f64) -> u32 {
     let per_sec = 3.0 * video_rate + 2.0 * AUDIO_BYTES_PER_SEC;
-    ((free as f64 / per_sec) as u32).clamp(SECONDS_OPTIONS[SECONDS_OPTIONS.len() - 1], MAX_SECONDS)
+    // 2 minutos sempre pode: é o que já existia antes das durações longas.
+    ((free as f64 / per_sec) as u32).clamp(120, MAX_SECONDS)
 }
 
 enum Action {

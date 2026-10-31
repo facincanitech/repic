@@ -2,7 +2,6 @@ use crate::hotkey::{Combo, same_keys};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-pub const SECONDS_OPTIONS: [u32; 5] = [15, 30, 60, 90, 120];
 /// FPS pra reduzir (o padrão é o nativo do monitor). Do maior pro menor.
 pub const FPS_OPTIONS: [u32; 6] = [240, 165, 144, 120, 60, 30];
 /// Alturas pra reduzir a resolução (o padrão é a nativa). Do maior pro menor.
@@ -11,25 +10,29 @@ pub const MIN_SECONDS: u32 = 15;
 /// Até 2 horas: mais que isso o buffer ocuparia disco demais o tempo todo.
 pub const MAX_SECONDS: u32 = 2 * 60 * 60;
 
-/// Tamanho do passo do − e do +: fino nos tempos curtos, largo nos longos.
-fn step_size(seconds: u32) -> u32 {
+/// Unidades do campo de duração, em segundos.
+pub const UNITS: [u32; 3] = [1, 60, 3600];
+
+/// Unidade em que o tempo aparece inteiro: 7200 = 2 horas, 90 = 90 segundos.
+pub fn best_unit(seconds: u32) -> u32 {
     match seconds {
-        0..300 => 10,
-        300..1800 => 60,
-        _ => 600,
+        s if s >= 3600 && s % 3600 == 0 => 3600,
+        s if s >= 60 && s % 60 == 0 => 60,
+        _ => 1,
     }
 }
 
-/// Próximo tempo no botão +.
-pub fn step_up(seconds: u32) -> u32 {
-    let step = step_size(seconds);
-    ((seconds / step + 1) * step).min(MAX_SECONDS)
-}
-
-/// Próximo tempo no botão −.
-pub fn step_down(seconds: u32) -> u32 {
-    let step = step_size(seconds.saturating_sub(1));
-    (seconds.saturating_sub(1) / step * step).max(MIN_SECONDS)
+/// Tempo digitado -> segundos, dentro do limite e sempre inteiro na unidade:
+/// 2 horas nunca vira 2h e 1 minuto. Só quebra a unidade se o disco não
+/// comportar nem 1 dela (aí fica no maior tempo que cabe).
+pub fn duration_from_input(value: u32, unit: u32, max: u32) -> u32 {
+    // "0 minutos" vira 1 minuto, não 15 segundos numa unidade que ninguém pediu.
+    let clamped = value
+        .max(1)
+        .saturating_mul(unit)
+        .clamp(MIN_SECONDS, max.max(MIN_SECONDS));
+    let whole = clamped / unit * unit;
+    if whole >= MIN_SECONDS { whole } else { clamped }
 }
 
 /// "90s", "2min 10s", "1h 30min".
@@ -241,18 +244,27 @@ mod tests {
     }
 
     #[test]
-    fn duration_steps_follow_the_time_scale() {
-        assert_eq!(step_up(120), 130);
-        assert_eq!(step_up(125), 130);
-        assert_eq!(step_up(290), 300);
-        assert_eq!(step_up(300), 360);
-        assert_eq!(step_up(1800), 2400);
-        assert_eq!(step_up(MAX_SECONDS), MAX_SECONDS);
-        assert_eq!(step_down(130), 120);
-        assert_eq!(step_down(300), 290);
-        assert_eq!(step_down(360), 300);
-        assert_eq!(step_down(2400), 1800);
-        assert_eq!(step_down(MIN_SECONDS), MIN_SECONDS);
+    fn typed_duration_stays_whole_and_in_range() {
+        assert_eq!(duration_from_input(2, 3600, MAX_SECONDS), 7200);
+        assert_eq!(duration_from_input(3, 3600, MAX_SECONDS), 7200);
+        assert_eq!(duration_from_input(20, 60, MAX_SECONDS), 1200);
+        assert_eq!(duration_from_input(150, 60, MAX_SECONDS), 7200);
+        assert_eq!(duration_from_input(45, 1, MAX_SECONDS), 45);
+        assert_eq!(duration_from_input(5, 1, MAX_SECONDS), 15);
+        assert_eq!(duration_from_input(0, 60, MAX_SECONDS), 60);
+        // Limite do disco de 5min30s: em minutos, fica nos 5 inteiros.
+        assert_eq!(duration_from_input(20, 60, 330), 300);
+        // Não cabe nem 1 hora: fica no maior tempo que cabe.
+        assert_eq!(duration_from_input(1, 3600, 330), 330);
+    }
+
+    #[test]
+    fn shows_each_duration_in_its_whole_unit() {
+        assert_eq!(best_unit(30), 1);
+        assert_eq!(best_unit(90), 1);
+        assert_eq!(best_unit(60), 60);
+        assert_eq!(best_unit(1200), 60);
+        assert_eq!(best_unit(7200), 3600);
     }
 
     #[test]
