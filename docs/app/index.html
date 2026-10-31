@@ -161,7 +161,7 @@ const formatSize = b => b >= 1e9 ? (b / 1e9).toFixed(1) + " GB" : b < 1e7 ? (b /
 const clock = s => String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
 const bestUnit = s => s >= 3600 && s % 3600 === 0 ? 3600 : s >= 60 && s % 60 === 0 ? 60 : 1;
 
-let config = null, lastMessage = "", clipCount = -1, waitingOverlay = false;
+let config = null, lastMessage = "", clipCount = -1, waitingOverlay = false, wasSaving = false;
 
 async function refreshState() {
   if (!native) return;
@@ -178,11 +178,13 @@ async function refreshState() {
   $("status").textContent = !s.running ? t.off
     : s.recording ? fill(t.recording, clock(s.recordingSeconds), formatSize(s.recordingBytes) + limit)
     : fill(t.looping, s.videoSize.replace("x", "×"), config ? formatDuration(config.seconds) : "");
-  if (s.message !== lastMessage) {
+  // Dois clipes seguidos repetem a mensagem: o fim do salvamento também atualiza a lista.
+  if (s.message !== lastMessage || (wasSaving && !s.saving)) {
     lastMessage = s.message;
     $("message").textContent = s.message;
     refreshClips();
   }
+  wasSaving = s.saving;
   $("version").textContent = "RePic v" + s.nativeVersion;
   window.nativeVersion = s.nativeVersion;
 }
