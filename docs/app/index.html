@@ -30,14 +30,17 @@
   #update a { color: #fff; background: var(--accent); padding: 8px 12px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 13px; }
   h2 { font-size: 16px; margin: 4px 16px 10px; }
   h2 small { color: var(--muted); font-weight: 400; margin-left: 6px; }
-  #clips { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; padding: 0 16px 24px; }
-  .clip { background: var(--card); border-radius: 12px; overflow: hidden; }
-  .thumb { aspect-ratio: 16/9; background: #26262c; position: relative; width: 100%; padding: 0; border-radius: 0; display: block; }
-  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .thumb span { position: absolute; right: 8px; bottom: 6px; font-size: 11px; background: rgba(0,0,0,.65); padding: 1px 6px; border-radius: 4px; }
-  .info { padding: 8px 10px 10px; }
-  .info b { display: block; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .info small { display: block; color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+  #clips { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; padding: 0 12px 24px; }
+  .clip { background: var(--card); border-radius: 10px; overflow: hidden; min-width: 0; }
+  .thumb { aspect-ratio: 3/4; min-height: 0; background: #26262c; position: relative; width: 100%; padding: 0; border-radius: 0; display: block; overflow: hidden; }
+  .thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+  .thumb span { position: absolute; right: 4px; bottom: 4px; font-size: 10px; font-weight: 500; background: rgba(0,0,0,.7); padding: 1px 4px; border-radius: 4px; }
+  .info { padding: 5px 6px 6px; }
+  .info b { display: block; font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .info small { display: block; color: var(--muted); font-size: 10px; margin-bottom: 4px; }
+  .clip .row { gap: 4px; }
+  .clip .row button { min-height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; }
+  .clip .row svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   .row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
   .row button { font-size: 13px; padding: 6px; min-height: 38px; }
   .danger { color: var(--accent); }
@@ -189,6 +192,9 @@ async function refreshState() {
   window.nativeVersion = s.nativeVersion;
 }
 
+const ICON_SHARE = '<svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5M5 14v6h14v-6"/></svg>';
+const ICON_DELETE = '<svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>';
+
 async function refreshClips() {
   if (!native) return;
   const { clips } = await native.listClips();
@@ -208,23 +214,25 @@ async function refreshClips() {
     img.alt = "";
     img.loading = "lazy";
     const badge = document.createElement("span");
-    badge.textContent = formatSize(clip.size);
+    badge.textContent = formatDuration(Math.round(clip.duration / 1000));
     thumb.append(img, badge);
     thumb.onclick = () => native.openClip({ id: clip.id });
     native.thumbnail({ id: clip.id }).then(r => { img.src = r.image; }).catch(() => {});
     const info = document.createElement("div");
     info.className = "info";
     const name = document.createElement("b");
-    name.textContent = clip.name.replace(/\.mp4$/, "");
+    name.textContent = new Date(clip.date * 1000).toLocaleString(undefined, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
     const when = document.createElement("small");
-    when.textContent = new Date(clip.date * 1000).toLocaleString() + " · " + formatDuration(Math.round(clip.duration / 1000));
+    when.textContent = formatSize(clip.size);
     const row = document.createElement("div");
     row.className = "row";
     const share = document.createElement("button");
-    share.textContent = t.share;
+    share.innerHTML = ICON_SHARE;
+    share.setAttribute("aria-label", t.share);
     share.onclick = () => native.shareClip({ id: clip.id });
     const del = document.createElement("button");
-    del.textContent = t.delete;
+    del.innerHTML = ICON_DELETE;
+    del.setAttribute("aria-label", t.delete);
     del.className = "danger";
     del.onclick = () => askDelete(clip);
     row.append(share, del);
